@@ -38,7 +38,7 @@ _token_expires_at: float = 0.0  # unix timestamp; 0 means unknown/never refreshe
 
 def is_agent_configured() -> bool:
     """Check if Linear Agent credentials are configured."""
-    return bool(_access_token or LINEAR_AGENT_ACCESS_TOKEN)
+    return bool(_get_access_token())
 
 
 def _get_access_token() -> str:
@@ -92,12 +92,14 @@ async def _ensure_valid_token() -> str | None:
 
     Returns the access token, or None if unavailable.
     """
-    token = _get_access_token()
+    with _token_lock:
+        token = _access_token
+        expires_at = _token_expires_at
     if not token:
         return None
 
     # If we know the token is expired, try to refresh
-    if _token_expires_at > 0 and time.time() >= _token_expires_at:
+    if expires_at > 0 and time.time() >= expires_at:
         refreshed = await _refresh_access_token()
         if not refreshed:
             # Use the old token as a last resort — it might still work

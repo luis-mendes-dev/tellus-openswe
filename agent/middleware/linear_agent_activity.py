@@ -67,9 +67,16 @@ class LinearAgentKeepalive(AgentMiddleware):
         # Fire-and-forget the keepalive check (sync context, schedule async)
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._maybe_emit_keepalive())
+            task = loop.create_task(self._maybe_emit_keepalive())
+            task.add_done_callback(
+                lambda t: logger.exception("Keepalive task failed", exc_info=t.exception())
+                if t.exception()
+                else None
+            )
+        except RuntimeError:
+            logger.debug("No running event loop for keepalive (sync context)")
         except Exception:  # noqa: BLE001
-            pass
+            logger.exception("Failed to schedule keepalive task")
         return result
 
     async def awrap_tool_call(

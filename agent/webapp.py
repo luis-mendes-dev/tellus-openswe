@@ -42,18 +42,10 @@ from .utils.linear_agent import (
     parse_prompt_context,
     update_session_external_urls,
 )
-from .utils.linear_agent import (
-    emit_error as emit_agent_error,
-)
-from .utils.linear_agent import (
-    emit_response as emit_agent_response,
-)
-from .utils.linear_agent import (
-    emit_thought as emit_agent_thought,
-)
-from .utils.linear_agent import (
-    is_agent_configured as is_linear_agent_configured,
-)
+from .utils.linear_agent import emit_error as emit_agent_error
+from .utils.linear_agent import emit_response as emit_agent_response
+from .utils.linear_agent import emit_thought as emit_agent_thought
+from .utils.linear_agent import is_agent_configured as is_linear_agent_configured
 from .utils.linear_team_repo_map import LINEAR_TEAM_TO_REPO
 from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
 from .utils.repo import extract_repo_from_text
