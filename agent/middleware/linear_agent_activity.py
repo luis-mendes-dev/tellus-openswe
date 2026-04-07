@@ -69,9 +69,11 @@ class LinearAgentKeepalive(AgentMiddleware):
             loop = asyncio.get_running_loop()
             task = loop.create_task(self._maybe_emit_keepalive())
             task.add_done_callback(
-                lambda t: logger.exception("Keepalive task failed", exc_info=t.exception())
-                if t.exception()
-                else None
+                lambda t: (
+                    logger.exception("Keepalive task failed", exc_info=t.exception())
+                    if t.exception()
+                    else None
+                )
             )
         except RuntimeError:
             logger.debug("No running event loop for keepalive (sync context)")
