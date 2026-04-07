@@ -187,37 +187,6 @@ async def emit_thought(session_id: str, body: str, *, ephemeral: bool = False) -
     return success
 
 
-async def emit_action(
-    session_id: str,
-    action: str,
-    parameter: str = "",
-    result_text: str | None = None,
-    *,
-    ephemeral: bool = False,
-) -> bool:
-    """Emit an action activity on an agent session."""
-    content: dict[str, Any] = {"type": "action", "action": action}
-    if parameter:
-        content["parameter"] = parameter
-    if result_text is not None:
-        content["result"] = result_text
-
-    result = await _agent_graphql_request(
-        _ACTIVITY_CREATE_MUTATION,
-        {
-            "input": {
-                "agentSessionId": session_id,
-                "content": content,
-                "ephemeral": ephemeral,
-            }
-        },
-    )
-    success = bool(result.get("agentActivityCreate", {}).get("success"))
-    if not success:
-        logger.error("Failed to emit action for session %s: %s", session_id, result)
-    return success
-
-
 async def emit_response(session_id: str, body: str) -> bool:
     """Emit a response activity — marks the session as complete."""
     result = await _agent_graphql_request(

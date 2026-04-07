@@ -36,19 +36,13 @@ from .utils.github_comments import (
 from .utils.github_token import get_github_token_from_thread
 from .utils.github_user_email_map import GITHUB_USER_EMAIL_MAP
 from .utils.linear import post_linear_trace_comment
+from .utils.langsmith import get_langsmith_trace_url
 from .utils.linear_agent import (
+    agent_update_issue_status,
     emit_error as emit_agent_error,
-)
-from .utils.linear_agent import (
     emit_response as emit_agent_response,
-)
-from .utils.linear_agent import (
     emit_thought as emit_agent_thought,
-)
-from .utils.linear_agent import (
     is_agent_configured as is_linear_agent_configured,
-)
-from .utils.linear_agent import (
     parse_prompt_context,
     update_session_external_urls,
 )
@@ -1165,13 +1159,9 @@ async def process_agent_session_created(payload: dict[str, Any]) -> None:  # noq
         logger.info("LangGraph run created for agent session %s", session_id)
 
         # Move issue to "In Progress" (via agent identity)
-        from .utils.linear_agent import agent_update_issue_status
-
         await agent_update_issue_status(issue_id, "In Progress")
 
         # Emit thought with trace link + add as external URL on the session
-        from .utils.langsmith import get_langsmith_trace_url
-
         trace_url = get_langsmith_trace_url(run["run_id"])
         if trace_url:
             await emit_agent_thought(session_id, f"Working on it. [View trace]({trace_url})")

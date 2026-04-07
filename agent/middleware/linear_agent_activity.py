@@ -66,9 +66,8 @@ class LinearAgentKeepalive(AgentMiddleware):
         result = handler(request)
         # Fire-and-forget the keepalive check (sync context, schedule async)
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self._maybe_emit_keepalive())
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._maybe_emit_keepalive())
         except Exception:  # noqa: BLE001
             pass
         return result
@@ -211,7 +210,6 @@ async def linear_agent_completion(
 
             # Move issue to "In Review"
             try:
-                config = get_config()
                 linear_issue = config.get("configurable", {}).get("linear_issue", {})
                 issue_id = linear_issue.get("id") if isinstance(linear_issue, dict) else None
                 if issue_id:
