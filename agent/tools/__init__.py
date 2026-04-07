@@ -18,6 +18,7 @@ from .linear_get_issue import linear_get_issue
 from .linear_get_issue_comments import linear_get_issue_comments
 from .linear_list_teams import linear_list_teams
 from .linear_update_issue import linear_update_issue
+from .linear_update_issue_status import linear_update_issue_status
 from .slack_thread_reply import slack_thread_reply
 from .web_search import web_search
 
@@ -38,6 +39,7 @@ __all__ = [
     "linear_get_issue_comments",
     "linear_list_teams",
     "linear_update_issue",
+    "linear_update_issue_status",
     "slack_thread_reply",
     "submit_pr_review",
     "update_pr_review",

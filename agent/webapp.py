@@ -36,6 +36,22 @@ from .utils.github_comments import (
 from .utils.github_token import get_github_token_from_thread
 from .utils.github_user_email_map import GITHUB_USER_EMAIL_MAP
 from .utils.linear import post_linear_trace_comment
+from .utils.linear_agent import (
+    emit_error as emit_agent_error,
+)
+from .utils.linear_agent import (
+    emit_response as emit_agent_response,
+)
+from .utils.linear_agent import (
+    emit_thought as emit_agent_thought,
+)
+from .utils.linear_agent import (
+    is_agent_configured as is_linear_agent_configured,
+)
+from .utils.linear_agent import (
+    parse_prompt_context,
+    update_session_external_urls,
+)
 from .utils.linear_team_repo_map import LINEAR_TEAM_TO_REPO
 from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
 from .utils.repo import extract_repo_from_text
@@ -57,6 +73,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 LINEAR_WEBHOOK_SECRET = os.environ.get("LINEAR_WEBHOOK_SECRET", "")
+LINEAR_AGENT_WEBHOOK_SECRET = os.environ.get("LINEAR_AGENT_WEBHOOK_SECRET", "")
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 SLACK_BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID", "")
@@ -986,6 +1003,312 @@ async def linear_webhook(  # noqa: PLR0911, PLR0912, PLR0915
 async def linear_webhook_verify() -> dict[str, str]:
     """Verify endpoint for Linear webhook setup."""
     return {"status": "ok", "message": "Linear webhook endpoint is active"}
+
+
+# ---------------------------------------------------------------------------
+# Linear Agent (Agents API) webhook — separate from the Comment webhook above
+# ---------------------------------------------------------------------------
+
+
+def verify_linear_agent_signature(body: bytes, signature: str, secret: str) -> bool:
+    """Verify the Linear Agent webhook signature."""
+    if not secret:
+        logger.warning("LINEAR_AGENT_WEBHOOK_SECRET is not configured — rejecting webhook request")
+        return False
+    expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+async def process_agent_session_created(payload: dict[str, Any]) -> None:  # noqa: PLR0912, PLR0915
+    """Process a new Linear Agent session (user @mentioned or delegated issue).
+
+    This is the main handler — parses promptContext XML, emits the initial
+    thought, resolves the repo, and creates a LangGraph run.
+    """
+    agent_session = payload.get("agentSession", {})
+    session_id = agent_session.get("id", "")
+    issue = agent_session.get("issue", {})
+    issue_id = issue.get("id", "")
+    creator = agent_session.get("creator", {})
+
+    prompt_context_xml = payload.get("promptContext", "")
+    ctx = parse_prompt_context(prompt_context_xml)
+
+    identifier = ctx["identifier"] or issue.get("identifier", "")
+    title = ctx["title"] or issue.get("title", "No title")
+
+    logger.info(
+        "Processing agent session %s for issue %s (%s)",
+        session_id,
+        identifier,
+        issue_id,
+    )
+
+    # Emit initial thought within 10 seconds (Linear's responsiveness requirement)
+    await emit_agent_thought(session_id, f"Analyzing issue {identifier}...")
+
+    # Resolve repo from team/project mapping
+    team_name = ctx["team_name"]
+    project_name = ctx["project_name"]
+    repo_config = get_repo_config_from_team_mapping(team_name.strip(), project_name.strip())
+
+    if not _is_repo_org_allowed(repo_config):
+        logger.warning(
+            "Rejecting agent session: org '%s' not in ALLOWED_GITHUB_ORGS",
+            repo_config.get("owner"),
+        )
+        await emit_agent_error(
+            session_id,
+            f"Repository org `{repo_config.get('owner')}` is not in the allowed list.",
+        )
+        return
+
+    # Build prompt from XML context
+    description = ctx["description"] or issue.get("description", "No description")
+    comments_text = ""
+    if ctx["comments"]:
+        comments_text = "\n\n## Comments:\n"
+        for comment in ctx["comments"]:
+            author = comment.get("author", "User")
+            body = comment.get("body", "")
+            if body:
+                comments_text += f"\n**{author}:** {body}\n"
+
+    guidance_text = ""
+    if ctx["guidance"]:
+        guidance_text = "\n\n## Guidance:\n"
+        for rule in ctx["guidance"]:
+            guidance_text += f"- {rule.get('body', '')}\n"
+
+    user_name = creator.get("name", "")
+    triggered_by_line = f"## Triggered by: {user_name}\n\n" if user_name else ""
+    linear_project_id = ""
+    linear_issue_number = ""
+    if identifier and "-" in identifier:
+        parts = identifier.split("-", 1)
+        linear_project_id = parts[0]
+        linear_issue_number = parts[1]
+
+    prompt = (
+        f"Please work on the following issue:\n\n"
+        f"## Title: {title}\n\n"
+        f"{triggered_by_line}"
+        f"## Linear Ticket: {identifier} - Ticket ID: {issue_id}\n\n"
+        f"## Description:\n{description}\n"
+        f"{comments_text}"
+        f"{guidance_text}\n\n"
+        f"Please analyze this issue and implement the necessary changes. "
+        f"When you're done, commit and push your changes. "
+        f"Do NOT call linear_comment or linear_update_issue_status — "
+        f"status updates and completion messages are handled automatically."
+    )
+
+    # Extract image URLs from description and comments
+    image_urls: list[str] = []
+    description_image_urls = extract_image_urls(description)
+    if description_image_urls:
+        image_urls.extend(description_image_urls)
+    for comment in ctx["comments"]:
+        body = comment.get("body", "")
+        body_image_urls = extract_image_urls(body)
+        if body_image_urls:
+            image_urls.extend(body_image_urls)
+
+    content_blocks: list[dict[str, Any]] = [create_text_block(prompt)]
+    if image_urls:
+        image_urls = dedupe_urls(image_urls)
+        logger.info("Preparing %d image(s) for multimodal content", len(image_urls))
+        async with httpx.AsyncClient() as client:
+            for image_url in image_urls:
+                image_block = await fetch_image_block(image_url, client)
+                if image_block:
+                    content_blocks.append(image_block)
+
+    # Generate thread ID and create run
+    thread_id = generate_thread_id_from_issue(issue_id)
+
+    configurable: dict[str, Any] = {
+        "repo": repo_config,
+        "linear_issue": {
+            "id": issue_id,
+            "title": title,
+            "url": issue.get("url", ""),
+            "identifier": identifier,
+            "linear_project_id": linear_project_id,
+            "linear_issue_number": linear_issue_number,
+            "triggering_user_name": user_name,
+        },
+        "user_email": creator.get("email", ""),
+        "source": "linear-agent",
+        "agent_session_id": session_id,
+    }
+
+    thread_active = await is_thread_active(thread_id)
+
+    if thread_active:
+        logger.info("Thread %s is active, queueing agent session message", thread_id)
+        queued_payload = {"text": prompt, "image_urls": image_urls}
+        await queue_message_for_thread(thread_id, message_content=queued_payload)
+        await emit_agent_thought(
+            session_id, "You already have an active run. Queueing your request..."
+        )
+    else:
+        logger.info("Creating LangGraph run for agent session %s, thread %s", session_id, thread_id)
+        langgraph_client = get_client(url=LANGGRAPH_URL)
+        run = await langgraph_client.runs.create(
+            thread_id,
+            "agent",
+            input={"messages": [{"role": "user", "content": content_blocks}]},
+            config={"configurable": configurable, "metadata": _AGENT_VERSION_METADATA},
+            if_not_exists="create",
+        )
+        logger.info("LangGraph run created for agent session %s", session_id)
+
+        # Move issue to "In Progress" (via agent identity)
+        from .utils.linear_agent import agent_update_issue_status
+
+        await agent_update_issue_status(issue_id, "In Progress")
+
+        # Emit thought with trace link + add as external URL on the session
+        from .utils.langsmith import get_langsmith_trace_url
+
+        trace_url = get_langsmith_trace_url(run["run_id"])
+        if trace_url:
+            await emit_agent_thought(session_id, f"Working on it. [View trace]({trace_url})")
+            await update_session_external_urls(session_id, [{"label": "Trace", "url": trace_url}])
+
+
+async def process_agent_session_prompted(payload: dict[str, Any]) -> None:
+    """Handle a follow-up or stop signal on an existing agent session."""
+    agent_session = payload.get("agentSession", {})
+    session_id = agent_session.get("id", "")
+    issue = agent_session.get("issue", {})
+    issue_id = issue.get("id", "")
+    activity = payload.get("agentActivity", {})
+
+    # Handle stop signal
+    if activity.get("signal") == "stop":
+        logger.info("Received stop signal for agent session %s", session_id)
+        thread_id = generate_thread_id_from_issue(issue_id)
+        langgraph_client = get_client(url=LANGGRAPH_URL)
+        try:
+            runs = await langgraph_client.runs.list(thread_id, limit=1)
+            if runs and runs[0].get("status") in ("pending", "running"):
+                await langgraph_client.runs.cancel(thread_id, runs[0]["run_id"])
+                logger.info("Cancelled run %s for session %s", runs[0]["run_id"], session_id)
+        except Exception:
+            logger.exception("Failed to cancel run for session %s", session_id)
+        await emit_agent_response(session_id, "Stopped working on this issue.")
+        return
+
+    # Handle follow-up message
+    follow_up_body = activity.get("body", "") if isinstance(activity.get("body"), str) else ""
+    # Also check content for body
+    content = activity.get("content", {})
+    if not follow_up_body and isinstance(content, dict):
+        follow_up_body = content.get("body", "")
+
+    if not follow_up_body:
+        logger.warning("Prompted event for session %s has no message body", session_id)
+        return
+
+    thread_id = generate_thread_id_from_issue(issue_id)
+    thread_active = await is_thread_active(thread_id)
+
+    if thread_active:
+        await queue_message_for_thread(thread_id, message_content={"text": follow_up_body})
+        await emit_agent_thought(session_id, "Got your message, incorporating it...")
+    else:
+        await emit_agent_thought(session_id, "Looking at your follow-up...")
+        langgraph_client = get_client(url=LANGGRAPH_URL)
+
+        creator = agent_session.get("creator", {})
+        identifier = issue.get("identifier", "")
+        team = issue.get("team", {})
+        team_name = team.get("name", "") if team else ""
+        linear_project_id = ""
+        linear_issue_number = ""
+        if identifier and "-" in identifier:
+            parts = identifier.split("-", 1)
+            linear_project_id = parts[0]
+            linear_issue_number = parts[1]
+
+        configurable: dict[str, Any] = {
+            "repo": get_repo_config_from_team_mapping(team_name.strip(), ""),
+            "linear_issue": {
+                "id": issue_id,
+                "title": issue.get("title", ""),
+                "url": issue.get("url", ""),
+                "identifier": identifier,
+                "linear_project_id": linear_project_id,
+                "linear_issue_number": linear_issue_number,
+            },
+            "user_email": creator.get("email", ""),
+            "source": "linear-agent",
+            "agent_session_id": session_id,
+        }
+
+        content_blocks: list[dict[str, Any]] = [create_text_block(follow_up_body)]
+        await langgraph_client.runs.create(
+            thread_id,
+            "agent",
+            input={"messages": [{"role": "user", "content": content_blocks}]},
+            config={"configurable": configurable, "metadata": _AGENT_VERSION_METADATA},
+            if_not_exists="create",
+        )
+
+
+@app.post("/webhooks/linear-agent")
+async def linear_agent_webhook(
+    request: Request, background_tasks: BackgroundTasks
+) -> dict[str, str]:
+    """Handle Linear Agent Session Event webhooks.
+
+    Triggered when a user @mentions openswe or delegates an issue to it
+    in a workspace where the Linear Agent app is installed.
+    """
+    logger.info("Received Linear Agent webhook")
+
+    if not is_linear_agent_configured():
+        logger.warning("Linear Agent credentials not configured, rejecting webhook")
+        raise HTTPException(status_code=503, detail="Linear Agent not configured")
+
+    body = await request.body()
+
+    signature = request.headers.get("Linear-Signature", "")
+    if not verify_linear_agent_signature(body, signature, LINEAR_AGENT_WEBHOOK_SECRET):
+        logger.warning("Invalid Linear Agent webhook signature")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        logger.exception("Failed to parse Linear Agent webhook JSON")
+        return {"status": "error", "message": "Invalid JSON"}
+
+    event_type = request.headers.get("Linear-Event", "")
+    if event_type != "AgentSessionEvent":
+        logger.debug("Ignoring Linear Agent webhook: event type is %s", event_type)
+        return {"status": "ignored", "reason": f"Not an AgentSessionEvent: {event_type}"}
+
+    action = payload.get("action", "")
+    logger.info("Linear Agent webhook action: %s", action)
+
+    if action == "created":
+        background_tasks.add_task(process_agent_session_created, payload)
+        return {"status": "accepted", "message": "Processing new agent session"}
+    elif action == "prompted":
+        background_tasks.add_task(process_agent_session_prompted, payload)
+        return {"status": "accepted", "message": "Processing agent session follow-up"}
+    else:
+        logger.debug("Ignoring Linear Agent webhook: unknown action %s", action)
+        return {"status": "ignored", "reason": f"Unknown action: {action}"}
+
+
+@app.get("/webhooks/linear-agent")
+async def linear_agent_webhook_verify() -> dict[str, str]:
+    """Verify endpoint for Linear Agent webhook setup."""
+    return {"status": "ok", "message": "Linear Agent webhook endpoint is active"}
 
 
 @app.post("/webhooks/slack")

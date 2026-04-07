@@ -262,6 +262,9 @@ async def leave_failure_comment(
             "Auth failure for GitHub-triggered run (no token to post comment): %s", message
         )
         return
+    if source == "linear-agent":
+        logger.warning("Auth failure for Linear Agent-triggered run: %s", message)
+        return
     raise ValueError(f"Unknown source: {source}")
 
 

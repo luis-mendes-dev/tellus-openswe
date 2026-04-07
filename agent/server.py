@@ -28,9 +28,11 @@ from deepagents.backends.protocol import SandboxBackendProtocol
 from langsmith.sandbox import SandboxClientError
 
 from .middleware import (
+    LinearAgentKeepalive,
     ToolErrorMiddleware,
     check_message_queue_before_model,
     ensure_no_empty_msg,
+    linear_agent_completion,
     open_pr_if_needed,
 )
 from .prompt import construct_system_prompt
@@ -49,6 +51,7 @@ from .tools import (
     linear_get_issue_comments,
     linear_list_teams,
     linear_update_issue,
+    linear_update_issue_status,
     list_pr_review_comments,
     list_pr_reviews,
     slack_thread_reply,
@@ -411,6 +414,35 @@ async def get_agent(config: RunnableConfig) -> Pregel:  # noqa: PLR0915
     linear_issue_number = linear_issue.get("linear_issue_number", "")
     agents_md = await read_agents_md_in_sandbox(sandbox_backend, repo_dir)
 
+    source = config["configurable"].get("source", "")
+
+    # For linear-agent source, exclude linear_comment and linear_update_issue_status —
+    # communication goes through agent session activities, status updates are automatic.
+    tools = [
+        http_request,
+        fetch_url,
+        web_search,
+        commit_and_open_pr,
+        linear_create_issue,
+        linear_delete_issue,
+        linear_get_issue,
+        linear_get_issue_comments,
+        linear_list_teams,
+        linear_update_issue,
+        slack_thread_reply,
+        github_comment,
+        list_pr_reviews,
+        get_pr_review,
+        create_pr_review,
+        update_pr_review,
+        dismiss_pr_review,
+        submit_pr_review,
+        list_pr_review_comments,
+    ]
+    if source != "linear-agent":
+        tools.insert(4, linear_comment)
+        tools.append(linear_update_issue_status)
+
     logger.info("Returning agent with sandbox for thread %s", thread_id)
     return create_deep_agent(
         model=make_model(
@@ -424,33 +456,14 @@ async def get_agent(config: RunnableConfig) -> Pregel:  # noqa: PLR0915
             linear_issue_number=linear_issue_number,
             agents_md=agents_md,
         ),
-        tools=[
-            http_request,
-            fetch_url,
-            web_search,
-            commit_and_open_pr,
-            linear_comment,
-            linear_create_issue,
-            linear_delete_issue,
-            linear_get_issue,
-            linear_get_issue_comments,
-            linear_list_teams,
-            linear_update_issue,
-            slack_thread_reply,
-            github_comment,
-            list_pr_reviews,
-            get_pr_review,
-            create_pr_review,
-            update_pr_review,
-            dismiss_pr_review,
-            submit_pr_review,
-            list_pr_review_comments,
-        ],
+        tools=tools,
         backend=sandbox_backend,
         middleware=[
             ToolErrorMiddleware(),
+            LinearAgentKeepalive(),
             check_message_queue_before_model,
             ensure_no_empty_msg,
             open_pr_if_needed,
+            linear_agent_completion,
         ],
     ).with_config(config)

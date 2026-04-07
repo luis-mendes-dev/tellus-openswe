@@ -246,6 +246,62 @@ async def update_issue(
     }
 
 
+async def update_issue_status(issue_id: str, status_name: str) -> dict[str, Any]:
+    """Update a Linear issue's workflow status by name (e.g., 'In Progress', 'In Review', 'Done').
+
+    Resolves the status name to a state ID by looking up the issue's team workflow states.
+    """
+    # First, get the issue to find its team
+    issue_result = await get_issue(issue_id)
+    if "error" in issue_result:
+        return issue_result
+
+    issue = issue_result.get("issue")
+    if not issue:
+        return {"error": f"Issue {issue_id} not found"}
+
+    team = issue.get("team", {})
+    team_id = team.get("id") if team else None
+    if not team_id:
+        return {"error": "Could not determine team for issue"}
+
+    # Query workflow states through the team
+    query = """
+    query GetTeamStates($teamId: String!) {
+        team(id: $teamId) {
+            states {
+                nodes {
+                    id
+                    name
+                    type
+                }
+            }
+        }
+    }
+    """
+    states_result = await _graphql_request(query, {"teamId": team_id})
+    if "error" in states_result:
+        return states_result
+
+    states = states_result.get("team", {}).get("states", {}).get("nodes", [])
+    if not states:
+        return {"error": f"No workflow states found for team {team_id}"}
+
+    # Find matching state by name (case-insensitive)
+    target_state = None
+    for state in states:
+        if state.get("name", "").lower() == status_name.lower():
+            target_state = state
+            break
+
+    if not target_state:
+        available = [s.get("name") for s in states]
+        return {"error": f"Status '{status_name}' not found. Available: {available}"}
+
+    # Update the issue state
+    return await update_issue(issue_id=issue_id, state_id=target_state["id"])
+
+
 async def delete_issue(issue_id: str) -> dict[str, Any]:
     """Delete a Linear issue."""
     mutation = """
