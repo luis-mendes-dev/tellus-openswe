@@ -206,6 +206,56 @@ LINEAR_TEAM_TO_REPO = {
 
 Users can also override the team/project mapping per-comment by including `repo:owner/name` (or a GitHub URL) in their `@openswe` comment. The mapping is used as a fallback when no repo is specified in the comment text.
 
+### Linear Agent (optional)
+
+Open SWE can run as a **Linear Agent** with its own identity (name, avatar) in the workspace. When installed, users can @mention or delegate issues to the agent from Linear's native mention picker. This is separate from the Comment webhook above — both can coexist.
+
+**Create a Linear OAuth application:**
+
+1. In Linear, go to **Settings → API → OAuth Applications → New application**
+2. Fill in:
+   - **Name**: your agent's display name (e.g. `openswe`)
+   - **Redirect URI**: `http://localhost:3000/callback` (for initial token setup)
+3. Note the **Client ID** and **Client secret**
+
+**Configure the webhook:**
+
+1. In the application settings, under **Webhooks**, set:
+   - **URL**: `https://<your-ngrok-url>/webhooks/linear-agent`
+   - **Events**: enable **Agent session events**
+2. Copy the **Signing secret** — save as `LINEAR_AGENT_WEBHOOK_SECRET`
+
+**Get an OAuth access token:**
+
+1. Open this URL in your browser (replace values):
+   ```
+   https://linear.app/oauth/authorize?client_id=<CLIENT_ID>&redirect_uri=http://localhost:3000/callback&response_type=code&scope=read,write,app:assignable,app:mentionable&actor=app&prompt=consent
+   ```
+2. Authorize the app. The browser redirects to `localhost:3000/callback?code=<CODE>` — copy the code from the URL
+3. Exchange the code for tokens:
+   ```bash
+   curl -s -X POST https://api.linear.app/oauth/token \
+     -d "grant_type=authorization_code" \
+     -d "code=<CODE>" \
+     -d "client_id=<CLIENT_ID>" \
+     -d "client_secret=<CLIENT_SECRET>" \
+     -d "redirect_uri=http://localhost:3000/callback"
+   ```
+4. Save the `access_token` as `LINEAR_AGENT_ACCESS_TOKEN` and `refresh_token` as `LINEAR_AGENT_REFRESH_TOKEN`
+
+**Add an "In Review" workflow state (recommended):**
+
+The agent automatically moves issues to "In Progress" when it starts and "In Review" when it opens a PR. If your team doesn't have an "In Review" state, add one in **Settings → Teams → Your Team → Workflow**.
+
+**How it works:**
+
+- User @mentions the agent or delegates an issue → agent receives an `AgentSessionEvent` webhook
+- Agent emits a thought within 10 seconds, then creates a LangGraph run
+- All communication appears under the agent's own identity (not a human's API key)
+- Status updates (Backlog → In Progress → In Review) happen automatically under the agent's identity
+- Follow-ups and stop signals are handled via the `prompted` action
+- A 25-minute keepalive middleware prevents sessions from going stale (30-min timeout)
+
 ### Slack (optional)
 
 **Create a Slack App:**
@@ -336,6 +386,13 @@ DEFAULT_REPO_NAME=""                   # Default GitHub repo (e.g. "my-repo")
 # === Linear (if using Linear trigger) ===
 LINEAR_API_KEY=""                      # From step 5
 LINEAR_WEBHOOK_SECRET=""               # From step 5
+
+# === Linear Agent (if using Linear Agent trigger) ===
+LINEAR_AGENT_ACCESS_TOKEN=""           # OAuth access token (actor=app)
+LINEAR_AGENT_REFRESH_TOKEN=""          # OAuth refresh token
+LINEAR_AGENT_CLIENT_ID=""              # OAuth client ID
+LINEAR_AGENT_CLIENT_SECRET=""          # OAuth client secret
+LINEAR_AGENT_WEBHOOK_SECRET=""         # Signing secret from app webhook settings
 
 # === Slack (if using Slack trigger) ===
 SLACK_BOT_TOKEN=""                     # From step 5
