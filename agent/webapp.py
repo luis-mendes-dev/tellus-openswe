@@ -1232,6 +1232,7 @@ async def process_agent_session_prompted(payload: dict[str, Any]) -> None:
                 "identifier": identifier,
                 "linear_project_id": linear_project_id,
                 "linear_issue_number": linear_issue_number,
+                "triggering_user_name": creator.get("name", ""),
             },
             "user_email": creator.get("email", ""),
             "source": "linear-agent",

@@ -101,6 +101,7 @@ class LinearAgentKeepalive(AgentMiddleware):
             configurable = config.get("configurable", {})
             thread_id = configurable.get("thread_id")
             metadata = config.get("metadata", {})
+            langgraph_client = get_client() if thread_id else None
 
             last_update = metadata.get("last_linear_update_at")
             now = time.time()
@@ -112,8 +113,7 @@ class LinearAgentKeepalive(AgentMiddleware):
             else:
                 # First tool call — set the initial timestamp, don't emit
                 # (the background processor already emitted the initial thought)
-                if thread_id:
-                    langgraph_client = get_client()
+                if langgraph_client:
                     await langgraph_client.threads.update(
                         thread_id=thread_id,
                         metadata={"last_linear_update_at": now},
@@ -125,8 +125,7 @@ class LinearAgentKeepalive(AgentMiddleware):
             logger.info("Emitted keepalive thought for agent session %s", session_id)
 
             # Update thread metadata with new timestamp
-            if thread_id:
-                langgraph_client = get_client()
+            if langgraph_client:
                 await langgraph_client.threads.update(
                     thread_id=thread_id,
                     metadata={"last_linear_update_at": now},
