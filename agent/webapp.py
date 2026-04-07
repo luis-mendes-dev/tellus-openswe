@@ -35,16 +35,24 @@ from .utils.github_comments import (
 )
 from .utils.github_token import get_github_token_from_thread
 from .utils.github_user_email_map import GITHUB_USER_EMAIL_MAP
-from .utils.linear import post_linear_trace_comment
 from .utils.langsmith import get_langsmith_trace_url
+from .utils.linear import post_linear_trace_comment
 from .utils.linear_agent import (
     agent_update_issue_status,
-    emit_error as emit_agent_error,
-    emit_response as emit_agent_response,
-    emit_thought as emit_agent_thought,
-    is_agent_configured as is_linear_agent_configured,
     parse_prompt_context,
     update_session_external_urls,
+)
+from .utils.linear_agent import (
+    emit_error as emit_agent_error,
+)
+from .utils.linear_agent import (
+    emit_response as emit_agent_response,
+)
+from .utils.linear_agent import (
+    emit_thought as emit_agent_thought,
+)
+from .utils.linear_agent import (
+    is_agent_configured as is_linear_agent_configured,
 )
 from .utils.linear_team_repo_map import LINEAR_TEAM_TO_REPO
 from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
