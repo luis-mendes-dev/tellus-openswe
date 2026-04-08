@@ -789,7 +789,11 @@ async def process_slack_reaction(event: dict[str, Any]) -> None:
     comment = f"Slack reaction :{reaction}: from user {user_id}"
     success = await asyncio.to_thread(
         create_langsmith_feedback,
-        run_id, "user_reaction", score=score, comment=comment, source_info=source_info,
+        run_id,
+        "user_reaction",
+        score=score,
+        comment=comment,
+        source_info=source_info,
     )
     if success:
         logger.info(
