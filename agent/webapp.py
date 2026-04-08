@@ -830,9 +830,7 @@ async def process_slack_reaction_removed(event: dict[str, Any]) -> None:
     if not run_id:
         return
 
-    success = await asyncio.to_thread(
-        delete_langsmith_feedback, run_id, "user_reaction"
-    )
+    success = await asyncio.to_thread(delete_langsmith_feedback, run_id, "user_reaction")
     if success:
         logger.info(
             "Deleted LangSmith feedback for run %s: reaction=%s removed",

@@ -97,9 +97,7 @@ def delete_langsmith_feedback(run_id: str, key: str) -> bool:
     any_success = False
     for client in clients:
         try:
-            feedbacks = list(
-                client.list_feedback(run_ids=[run_id], feedback_key=[key])
-            )
+            feedbacks = list(client.list_feedback(run_ids=[run_id], feedback_key=[key]))
             for fb in feedbacks:
                 client.delete_feedback(fb.id)
             if feedbacks:

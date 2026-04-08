@@ -43,9 +43,7 @@ def slack_thread_reply(message: str) -> dict[str, Any]:
     return {"success": result_ts is not None}
 
 
-async def _store_msg_run_mapping(
-    channel_id: str, thread_ts: str, msg_ts: str
-) -> None:
+async def _store_msg_run_mapping(channel_id: str, thread_ts: str, msg_ts: str) -> None:
     """Look up the run_id for the current thread and store a msg_ts mapping."""
     try:
         client = get_client(url=LANGGRAPH_URL)
