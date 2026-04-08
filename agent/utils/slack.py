@@ -182,10 +182,10 @@ def format_slack_messages_for_prompt(
     return "\n".join(lines)
 
 
-async def post_slack_thread_reply(channel_id: str, thread_ts: str, text: str) -> bool:
-    """Post a reply in a Slack thread."""
+async def post_slack_thread_reply(channel_id: str, thread_ts: str, text: str) -> str | None:
+    """Post a reply in a Slack thread. Returns the message ts on success, None on failure."""
     if not SLACK_BOT_TOKEN:
-        return False
+        return None
 
     payload = {
         "channel": channel_id,
@@ -204,11 +204,12 @@ async def post_slack_thread_reply(channel_id: str, thread_ts: str, text: str) ->
             data = response.json()
             if not data.get("ok"):
                 logger.warning("Slack chat.postMessage failed: %s", data.get("error"))
-                return False
-            return True
+                return None
+            message = data.get("message", {})
+            return message.get("ts") or data.get("ts")
         except httpx.HTTPError:
             logger.exception("Slack chat.postMessage request failed")
-            return False
+            return None
 
 
 async def post_slack_ephemeral_message(
@@ -365,10 +366,13 @@ async def fetch_slack_thread_messages(channel_id: str, thread_ts: str) -> list[d
     return messages
 
 
-async def post_slack_trace_reply(channel_id: str, thread_ts: str, run_id: str) -> None:
-    """Post a trace URL reply in a Slack thread."""
+async def post_slack_trace_reply(
+    channel_id: str, thread_ts: str, run_id: str
+) -> str | None:
+    """Post a trace URL reply in a Slack thread. Returns the message ts on success."""
     trace_url = get_langsmith_trace_url(run_id)
     if trace_url:
-        await post_slack_thread_reply(
+        return await post_slack_thread_reply(
             channel_id, thread_ts, f"Working on it! <{trace_url}|View trace>"
         )
+    return None

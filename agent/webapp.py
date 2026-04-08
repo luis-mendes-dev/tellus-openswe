@@ -35,6 +35,7 @@ from .utils.github_comments import (
 )
 from .utils.github_token import get_github_token_from_thread
 from .utils.github_user_email_map import GITHUB_USER_EMAIL_MAP
+from .utils.langsmith import create_langsmith_feedback
 from .utils.linear import post_linear_trace_comment
 from .utils.linear_team_repo_map import LINEAR_TEAM_TO_REPO
 from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
@@ -460,6 +461,82 @@ async def queue_message_for_thread(
         return False
 
 
+async def store_slack_message_run_mapping(
+    channel_id: str, message_ts: str, run_id: str
+) -> bool:
+    """Store a mapping from Slack message_ts to LangSmith run_id."""
+    langgraph_client = get_client(url=LANGGRAPH_URL)
+    try:
+        namespace = ("slack_reactions", channel_id)
+        await langgraph_client.store.put_item(namespace, message_ts, {"run_id": run_id})
+        logger.info(
+            "Stored Slack message→run mapping: channel=%s ts=%s run_id=%s",
+            channel_id,
+            message_ts,
+            run_id,
+        )
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to store Slack message→run mapping for ts=%s", message_ts
+        )
+        return False
+
+
+async def get_run_id_for_slack_message(channel_id: str, message_ts: str) -> str | None:
+    """Look up the LangSmith run_id for a Slack message."""
+    langgraph_client = get_client(url=LANGGRAPH_URL)
+    try:
+        namespace = ("slack_reactions", channel_id)
+        item = await langgraph_client.store.get_item(namespace, message_ts)
+        if item and item.get("value"):
+            return item["value"].get("run_id")
+    except Exception:  # noqa: BLE001
+        logger.debug("No run mapping found for channel=%s ts=%s", channel_id, message_ts)
+    return None
+
+
+_POSITIVE_REACTIONS = frozenset({"+1", "thumbsup", "white_check_mark", "heart"})
+_NEGATIVE_REACTIONS = frozenset({"-1", "thumbsdown", "x"})
+
+
+async def process_slack_reaction(event: dict[str, Any]) -> None:
+    """Process a Slack reaction_added event and log LangSmith feedback."""
+    reaction = event.get("reaction", "")
+    is_positive = reaction in _POSITIVE_REACTIONS
+    is_negative = reaction in _NEGATIVE_REACTIONS
+    if not is_positive and not is_negative:
+        return
+
+    channel_id = event.get("item", {}).get("channel", "")
+    message_ts = event.get("item", {}).get("ts", "")
+    user_id = event.get("user", "")
+    if not channel_id or not message_ts:
+        return
+
+    run_id = await get_run_id_for_slack_message(channel_id, message_ts)
+    if not run_id:
+        logger.debug(
+            "No run_id mapping for reaction on channel=%s ts=%s", channel_id, message_ts
+        )
+        return
+
+    score = 1.0 if is_positive else 0.0
+    create_langsmith_feedback(
+        run_id=run_id,
+        key="slack_reaction",
+        score=score,
+        comment=f"Slack reaction :{reaction}: from user {user_id}",
+        source_info={
+            "source": "slack_reaction",
+            "reaction": reaction,
+            "user_id": user_id,
+            "channel_id": channel_id,
+            "message_ts": message_ts,
+        },
+    )
+
+
 async def process_linear_issue(  # noqa: PLR0912, PLR0915
     issue_data: dict[str, Any], repo_config: dict[str, str]
 ) -> None:
@@ -832,7 +909,9 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
         if_not_exists="create",
         multitask_strategy="interrupt",
     )
-    await post_slack_trace_reply(channel_id, thread_ts, run["run_id"])
+    trace_msg_ts = await post_slack_trace_reply(channel_id, thread_ts, run["run_id"])
+    if trace_msg_ts:
+        await store_slack_message_run_mapping(channel_id, trace_msg_ts, run["run_id"])
 
 
 def verify_linear_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -990,7 +1069,7 @@ async def linear_webhook_verify() -> dict[str, str]:
 
 @app.post("/webhooks/slack")
 async def slack_webhook(request: Request, background_tasks: BackgroundTasks) -> dict[str, str]:
-    """Handle Slack Event API webhooks for app mentions."""
+    """Handle Slack Event API webhooks for app mentions and reactions."""
     body = await request.body()
 
     signature = request.headers.get("X-Slack-Signature", "")
@@ -1018,6 +1097,11 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks) -> 
         return {"status": "ignored", "reason": "Not an event callback"}
 
     event = payload.get("event", {})
+
+    if event.get("type") == "reaction_added":
+        background_tasks.add_task(process_slack_reaction, event)
+        return {"status": "accepted", "message": "Reaction event queued"}
+
     if event.get("type") != "app_mention":
         message_text = event.get("text", "")
         has_username_mention = bool(
