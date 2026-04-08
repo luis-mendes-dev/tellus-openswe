@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from typing import Any
@@ -33,7 +34,8 @@ def get_langsmith_trace_url(run_id: str) -> str | None:
         return None
 
 
-def _build_langsmith_clients() -> list[LangSmithClient]:
+@functools.lru_cache(maxsize=1)
+def _build_langsmith_clients() -> tuple[LangSmithClient, ...]:
     """Build LangSmith clients for all configured environments (prod + dev)."""
     clients: list[LangSmithClient] = []
 
@@ -47,7 +49,7 @@ def _build_langsmith_clients() -> list[LangSmithClient]:
     if prod_api_key and prod_api_key != dev_api_key:
         clients.append(LangSmithClient(api_key=prod_api_key, api_url=prod_api_url))
 
-    return clients
+    return tuple(clients)
 
 
 def create_langsmith_feedback(
