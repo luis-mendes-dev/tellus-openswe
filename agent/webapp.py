@@ -36,7 +36,7 @@ from .utils.github_comments import (
 )
 from .utils.github_token import get_github_token_from_thread
 from .utils.github_user_email_map import GITHUB_USER_EMAIL_MAP
-from .utils.langsmith import create_langsmith_feedback
+from .utils.langsmith import create_langsmith_feedback, delete_langsmith_feedback
 from .utils.linear import post_linear_trace_comment
 from .utils.linear_team_repo_map import LINEAR_TEAM_TO_REPO
 from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
@@ -806,6 +806,41 @@ async def process_slack_reaction(event: dict[str, Any]) -> None:
         logger.warning("Failed to log LangSmith feedback for run %s", run_id)
 
 
+async def process_slack_reaction_removed(event: dict[str, Any]) -> None:
+    """Process a Slack reaction_removed event and delete LangSmith feedback."""
+    reaction = event.get("reaction", "")
+    if reaction not in _FEEDBACK_REACTIONS:
+        return
+
+    item = event.get("item", {})
+    if item.get("type") != "message":
+        return
+
+    channel_id = item.get("channel", "")
+    message_ts = item.get("ts", "")
+    if not channel_id or not message_ts:
+        return
+
+    langgraph_client = get_client(url=LANGGRAPH_URL)
+    thread_ts = await _get_message_thread_ts(channel_id, message_ts)
+
+    run_id = await _lookup_run_id_for_slack_message(
+        langgraph_client, channel_id, message_ts, thread_ts
+    )
+    if not run_id:
+        return
+
+    success = await asyncio.to_thread(
+        delete_langsmith_feedback, run_id, "user_reaction"
+    )
+    if success:
+        logger.info(
+            "Deleted LangSmith feedback for run %s: reaction=%s removed",
+            run_id,
+            reaction,
+        )
+
+
 async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[str, str]) -> None:
     """Process a Slack app mention by creating or interrupting a thread run."""
     channel_id = event_data.get("channel_id", "")
@@ -1150,6 +1185,13 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks) -> 
         if reaction in _FEEDBACK_REACTIONS:
             background_tasks.add_task(process_slack_reaction, event)
             return {"status": "accepted", "message": "Reaction feedback queued"}
+        return {"status": "ignored", "reason": "Reaction not tracked for feedback"}
+
+    if event.get("type") == "reaction_removed":
+        reaction = event.get("reaction", "")
+        if reaction in _FEEDBACK_REACTIONS:
+            background_tasks.add_task(process_slack_reaction_removed, event)
+            return {"status": "accepted", "message": "Reaction removal queued"}
         return {"status": "ignored", "reason": "Reaction not tracked for feedback"}
 
     if event.get("type") != "app_mention":

@@ -86,3 +86,29 @@ def create_langsmith_feedback(
                 exc_info=True,
             )
     return any_success
+
+
+def delete_langsmith_feedback(run_id: str, key: str) -> bool:
+    """Delete feedback on a LangSmith run across all configured environments."""
+    clients = _build_langsmith_clients()
+    if not clients:
+        return False
+
+    any_success = False
+    for client in clients:
+        try:
+            feedbacks = list(
+                client.list_feedback(run_ids=[run_id], feedback_key=[key])
+            )
+            for fb in feedbacks:
+                client.delete_feedback(fb.id)
+            if feedbacks:
+                any_success = True
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Failed to delete LangSmith feedback for run %s on %s",
+                run_id,
+                client.api_url,
+                exc_info=True,
+            )
+    return any_success
