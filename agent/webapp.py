@@ -1,5 +1,6 @@
 """Custom FastAPI routes for LangGraph server."""
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -786,8 +787,9 @@ async def process_slack_reaction(event: dict[str, Any]) -> None:
         "user_id": user_id,
     }
     comment = f"Slack reaction :{reaction}: from user {user_id}"
-    success = create_langsmith_feedback(
-        run_id, "user_reaction", score=score, comment=comment, source_info=source_info
+    success = await asyncio.to_thread(
+        create_langsmith_feedback,
+        run_id, "user_reaction", score=score, comment=comment, source_info=source_info,
     )
     if success:
         logger.info(

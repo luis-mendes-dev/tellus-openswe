@@ -37,18 +37,15 @@ def _build_langsmith_clients() -> list[LangSmithClient]:
     """Build LangSmith clients for all configured environments (prod + dev)."""
     clients: list[LangSmithClient] = []
 
-    prod_api_key = os.environ.get("LANGSMITH_API_KEY_PROD")
-    prod_api_url = os.environ.get("LANGSMITH_URL_PROD", "https://api.smith.langchain.com")
-    if prod_api_key:
-        clients.append(LangSmithClient(api_key=prod_api_key, api_url=prod_api_url))
-
     dev_api_key = os.environ.get("LANGSMITH_API_KEY") or os.environ.get("LANGCHAIN_API_KEY")
     dev_api_url = os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-    if dev_api_key and dev_api_key != prod_api_key:
+    if dev_api_key:
         clients.append(LangSmithClient(api_key=dev_api_key, api_url=dev_api_url))
 
-    if not clients and dev_api_key:
-        clients.append(LangSmithClient(api_key=dev_api_key, api_url=dev_api_url))
+    prod_api_key = os.environ.get("LANGSMITH_API_KEY_PROD")
+    prod_api_url = os.environ.get("LANGSMITH_URL_PROD", "https://api.smith.langchain.com")
+    if prod_api_key and prod_api_key != dev_api_key:
+        clients.append(LangSmithClient(api_key=prod_api_key, api_url=prod_api_url))
 
     return clients
 
@@ -76,7 +73,7 @@ def create_langsmith_feedback(
                 score=score,
                 comment=comment,
                 source_info=source_info,
-                feedback_source_type="app",
+                feedback_source_type="api",
             )
             any_success = True
         except Exception:  # noqa: BLE001
