@@ -33,5 +33,5 @@ def slack_thread_reply(message: str) -> dict[str, Any]:
         return {"success": False, "error": "Message cannot be empty"}
 
     message = convert_mentions_to_slack_format(message)
-    success = asyncio.run(post_slack_thread_reply(channel_id, thread_ts, message))
-    return {"success": success}
+    result_ts = asyncio.run(post_slack_thread_reply(channel_id, thread_ts, message))
+    return {"success": result_ts is not None}

@@ -35,6 +35,7 @@ from .utils.github_comments import (
 )
 from .utils.github_token import get_github_token_from_thread
 from .utils.github_user_email_map import GITHUB_USER_EMAIL_MAP
+from .utils.langsmith import create_langsmith_feedback
 from .utils.linear import post_linear_trace_comment
 from .utils.linear_team_repo_map import LINEAR_TEAM_TO_REPO
 from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
@@ -93,6 +94,13 @@ _GITHUB_BOT_MESSAGE_PREFIXES = (
     "🤖 **Agent Response**",
     "❌ **Agent Error**",
 )
+
+_FEEDBACK_REACTIONS: dict[str, float] = {
+    "+1": 1.0,
+    "thumbsup": 1.0,
+    "-1": 0.0,
+    "thumbsdown": 0.0,
+}
 
 
 def get_repo_config_from_team_mapping(
@@ -682,6 +690,116 @@ async def process_linear_issue(  # noqa: PLR0912, PLR0915
         await post_linear_trace_comment(issue_id, run["run_id"], triggering_comment_id)
 
 
+async def _store_slack_run_mapping(
+    langgraph_client: LangGraphClient,
+    channel_id: str,
+    thread_ts: str,
+    run_id: str,
+    trace_msg_ts: str | None = None,
+) -> None:
+    """Persist a Slack thread/message → run_id mapping for reaction feedback."""
+    try:
+        namespace = ("slack_run_map", channel_id)
+        value: dict[str, str] = {"run_id": run_id}
+        await langgraph_client.store.put_item(namespace, f"thread:{thread_ts}", value)
+        if trace_msg_ts:
+            await langgraph_client.store.put_item(namespace, f"msg:{trace_msg_ts}", value)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "Failed to store Slack run mapping for channel=%s thread=%s run=%s",
+            channel_id,
+            thread_ts,
+            run_id,
+        )
+
+
+async def _lookup_run_id_for_slack_message(
+    langgraph_client: LangGraphClient,
+    channel_id: str,
+    message_ts: str,
+    thread_ts: str | None = None,
+) -> str | None:
+    """Look up the run_id for a Slack message (or its thread) for feedback."""
+    namespace = ("slack_run_map", channel_id)
+    try:
+        item = await langgraph_client.store.get_item(namespace, f"msg:{message_ts}")
+        if item and item.get("value", {}).get("run_id"):
+            return item["value"]["run_id"]
+    except Exception:  # noqa: BLE001
+        pass
+    if thread_ts:
+        try:
+            item = await langgraph_client.store.get_item(namespace, f"thread:{thread_ts}")
+            if item and item.get("value", {}).get("run_id"):
+                return item["value"]["run_id"]
+        except Exception:  # noqa: BLE001
+            pass
+    return None
+
+
+async def _get_message_thread_ts(channel_id: str, message_ts: str) -> str | None:
+    """Fetch the thread_ts for a Slack message (returns message_ts if it's a thread root)."""
+    messages = await fetch_slack_thread_messages(channel_id, message_ts)
+    if messages:
+        first = messages[0]
+        return first.get("thread_ts") or first.get("ts")
+    return None
+
+
+async def process_slack_reaction(event: dict[str, Any]) -> None:
+    """Process a Slack reaction event and log LangSmith feedback."""
+    reaction = event.get("reaction", "")
+    score = _FEEDBACK_REACTIONS.get(reaction)
+    if score is None:
+        return
+
+    item = event.get("item", {})
+    if item.get("type") != "message":
+        return
+
+    channel_id = item.get("channel", "")
+    message_ts = item.get("ts", "")
+    user_id = event.get("user", "")
+    if not channel_id or not message_ts:
+        return
+
+    langgraph_client = get_client(url=LANGGRAPH_URL)
+
+    thread_ts = await _get_message_thread_ts(channel_id, message_ts)
+
+    run_id = await _lookup_run_id_for_slack_message(
+        langgraph_client, channel_id, message_ts, thread_ts
+    )
+    if not run_id:
+        logger.debug(
+            "No run_id found for Slack reaction on channel=%s message=%s",
+            channel_id,
+            message_ts,
+        )
+        return
+
+    source_info: dict[str, Any] = {
+        "source": "slack_reaction",
+        "reaction": reaction,
+        "channel_id": channel_id,
+        "message_ts": message_ts,
+        "user_id": user_id,
+    }
+    comment = f"Slack reaction :{reaction}: from user {user_id}"
+    success = create_langsmith_feedback(
+        run_id, "user_reaction", score=score, comment=comment, source_info=source_info
+    )
+    if success:
+        logger.info(
+            "Logged LangSmith feedback for run %s: reaction=%s score=%s",
+            run_id,
+            reaction,
+            score,
+        )
+    else:
+        logger.warning("Failed to log LangSmith feedback for run %s", run_id)
+
+
 async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[str, str]) -> None:
     """Process a Slack app mention by creating or interrupting a thread run."""
     channel_id = event_data.get("channel_id", "")
@@ -832,7 +950,9 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
         if_not_exists="create",
         multitask_strategy="interrupt",
     )
-    await post_slack_trace_reply(channel_id, thread_ts, run["run_id"])
+    trace_msg_ts = await post_slack_trace_reply(channel_id, thread_ts, run["run_id"])
+    run_id = run["run_id"]
+    await _store_slack_run_mapping(langgraph_client, channel_id, thread_ts, run_id, trace_msg_ts)
 
 
 def verify_linear_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -1018,6 +1138,14 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks) -> 
         return {"status": "ignored", "reason": "Not an event callback"}
 
     event = payload.get("event", {})
+
+    if event.get("type") == "reaction_added":
+        reaction = event.get("reaction", "")
+        if reaction in _FEEDBACK_REACTIONS:
+            background_tasks.add_task(process_slack_reaction, event)
+            return {"status": "accepted", "message": "Reaction feedback queued"}
+        return {"status": "ignored", "reason": "Reaction not tracked for feedback"}
+
     if event.get("type") != "app_mention":
         message_text = event.get("text", "")
         has_username_mention = bool(
