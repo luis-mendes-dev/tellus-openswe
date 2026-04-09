@@ -192,6 +192,24 @@ async def _create_sandbox_with_proxy() -> SandboxBackendProtocol:
     return sandbox_backend
 
 
+async def _refresh_github_proxy(
+    sandbox_backend: SandboxBackendProtocol,
+) -> None:
+    """Refresh GitHub proxy credentials for reused LangSmith sandboxes."""
+    if os.getenv("SANDBOX_TYPE", "langsmith") != "langsmith":
+        return
+
+    installation_token = await get_github_app_installation_token()
+    if not installation_token:
+        logger.warning(
+            "Skipping GitHub proxy refresh for sandbox %s: installation token unavailable",
+            sandbox_backend.id,
+        )
+        return
+
+    await asyncio.to_thread(_configure_github_proxy, sandbox_backend.id, installation_token)
+
+
 async def _recreate_sandbox(
     thread_id: str,
     repo_owner: str,
@@ -283,6 +301,8 @@ async def get_agent(config: RunnableConfig) -> Pregel:  # noqa: PLR0915
         metadata = get_config().get("metadata", {})
         repo_dir = metadata.get("repo_dir")
 
+        await _refresh_github_proxy(sandbox_backend)
+
         if repo_owner and repo_name:
             logger.info("Pulling latest changes for repo %s/%s", repo_owner, repo_name)
             try:
@@ -332,7 +352,6 @@ async def get_agent(config: RunnableConfig) -> Pregel:  # noqa: PLR0915
     else:
         logger.info("Connecting to existing sandbox %s", sandbox_id)
         try:
-            # Connect to existing sandbox (no proxy reconfiguration needed)
             sandbox_backend = await asyncio.to_thread(create_sandbox, sandbox_id)
             logger.info("Connected to existing sandbox %s", sandbox_id)
         except Exception:
@@ -350,6 +369,8 @@ async def get_agent(config: RunnableConfig) -> Pregel:  # noqa: PLR0915
                 logger.exception("Failed to create replacement sandbox")
                 await client.threads.update(thread_id=thread_id, metadata={"sandbox_id": None})
                 raise
+
+        await _refresh_github_proxy(sandbox_backend)
 
         metadata = get_config().get("metadata", {})
         repo_dir = metadata.get("repo_dir")
