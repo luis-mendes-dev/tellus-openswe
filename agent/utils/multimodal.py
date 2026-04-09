@@ -143,9 +143,7 @@ async def fetch_slack_text_files(
                     headers: dict[str, str] = {}
                     if slack_bot_token:
                         headers["Authorization"] = f"Bearer {slack_bot_token}"
-                    response = await client.get(
-                        url_private, headers=headers, follow_redirects=True
-                    )
+                    response = await client.get(url_private, headers=headers, follow_redirects=True)
                     response.raise_for_status()
                     content = response.text
                     if len(content) > 50_000:
