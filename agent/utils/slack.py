@@ -178,6 +178,15 @@ def format_slack_messages_for_prompt(
             else:
                 bot_name = message.get("username") or "Bot"
             author = f"@{bot_name}(bot)"
+        files = message.get("files")
+        if isinstance(files, list) and files:
+            file_names = [
+                f.get("title") or f.get("name") or "untitled"
+                for f in files
+                if isinstance(f, dict)
+            ]
+            if file_names:
+                text += " " + " ".join(f"[attached: {name}]" for name in file_names)
         lines.append(f"{author}: {text}")
     return "\n".join(lines)
 

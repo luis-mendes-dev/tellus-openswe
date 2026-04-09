@@ -37,7 +37,12 @@ from .utils.github_token import get_github_token_from_thread
 from .utils.github_user_email_map import GITHUB_USER_EMAIL_MAP
 from .utils.linear import post_linear_trace_comment
 from .utils.linear_team_repo_map import LINEAR_TEAM_TO_REPO
-from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
+from .utils.multimodal import (
+    dedupe_urls,
+    extract_image_urls,
+    fetch_image_block,
+    fetch_slack_text_files,
+)
 from .utils.repo import extract_repo_from_text
 from .utils.slack import (
     add_slack_reaction,
@@ -782,13 +787,22 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
             and f.get("url_private")
         ]
     )
-    if image_urls:
-        logger.info("Preparing %d image(s) for Slack mention", len(image_urls))
-        async with httpx.AsyncClient() as http_client:
+    async with httpx.AsyncClient() as http_client:
+        if image_urls:
+            logger.info("Preparing %d image(s) for Slack mention", len(image_urls))
             for image_url in image_urls:
                 image_block = await fetch_image_block(image_url, http_client)
                 if image_block:
                     content_blocks.append(image_block)
+
+        text_files = await fetch_slack_text_files(context_messages, http_client)
+        if text_files:
+            logger.info("Including %d text snippet(s) for Slack mention", len(text_files))
+            for tf in text_files:
+                snippet_block = create_text_block(
+                    f"## Slack Snippet: {tf['title']}\n```\n{tf['content']}\n```"
+                )
+                content_blocks.append(snippet_block)
 
     configurable: dict[str, Any] = {
         "repo": repo_config,
