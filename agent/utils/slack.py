@@ -373,3 +373,83 @@ async def post_slack_trace_reply(channel_id: str, thread_ts: str, run_id: str) -
             channel_id, thread_ts, f"Working on it! <{trace_url}|View trace>"
         )
     return None
+
+
+# ---------------------------------------------------------------------------
+# Slack → run_id store mapping helpers
+# ---------------------------------------------------------------------------
+
+_SLACK_RUN_MAP_NS = "slack_run_map"
+_THREAD_KEY_PREFIX = "thread:"
+_MSG_KEY_PREFIX = "msg:"
+
+
+async def store_slack_run_mapping(
+    langgraph_client: Any,
+    channel_id: str,
+    thread_ts: str,
+    run_id: str,
+    *,
+    extra_msg_ts: str | None = None,
+) -> None:
+    """Persist Slack thread/message → run_id mappings for reaction feedback."""
+    try:
+        namespace = (_SLACK_RUN_MAP_NS, channel_id)
+        value: dict[str, str] = {"run_id": run_id}
+        await langgraph_client.store.put_item(namespace, f"{_THREAD_KEY_PREFIX}{thread_ts}", value)
+        if extra_msg_ts:
+            await langgraph_client.store.put_item(
+                namespace, f"{_MSG_KEY_PREFIX}{extra_msg_ts}", value
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "Failed to store Slack run mapping for channel=%s thread=%s run=%s",
+            channel_id,
+            thread_ts,
+            run_id,
+        )
+
+
+async def store_slack_msg_run_mapping(
+    langgraph_client: Any,
+    channel_id: str,
+    thread_ts: str,
+    msg_ts: str,
+) -> None:
+    """Look up run_id for a thread and store a msg_ts → run_id mapping."""
+    try:
+        namespace = (_SLACK_RUN_MAP_NS, channel_id)
+        item = await langgraph_client.store.get_item(namespace, f"{_THREAD_KEY_PREFIX}{thread_ts}")
+        if item and item.get("value", {}).get("run_id"):
+            run_id = item["value"]["run_id"]
+            await langgraph_client.store.put_item(
+                namespace, f"{_MSG_KEY_PREFIX}{msg_ts}", {"run_id": run_id}
+            )
+    except Exception:  # noqa: BLE001
+        logger.debug("Failed to store msg run mapping for channel=%s msg=%s", channel_id, msg_ts)
+
+
+async def lookup_run_id_for_slack_message(
+    langgraph_client: Any,
+    channel_id: str,
+    message_ts: str,
+    thread_ts: str | None = None,
+) -> str | None:
+    """Look up the run_id for a Slack message (or its thread) for feedback."""
+    namespace = (_SLACK_RUN_MAP_NS, channel_id)
+    try:
+        item = await langgraph_client.store.get_item(namespace, f"{_MSG_KEY_PREFIX}{message_ts}")
+        if item and item.get("value", {}).get("run_id"):
+            return item["value"]["run_id"]
+    except Exception:  # noqa: BLE001
+        logger.debug("Store lookup failed for msg:%s", message_ts)
+    if thread_ts:
+        try:
+            item = await langgraph_client.store.get_item(
+                namespace, f"{_THREAD_KEY_PREFIX}{thread_ts}"
+            )
+            if item and item.get("value", {}).get("run_id"):
+                return item["value"]["run_id"]
+        except Exception:  # noqa: BLE001
+            logger.debug("Store lookup failed for thread:%s", thread_ts)
+    return None

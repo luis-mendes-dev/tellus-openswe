@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import uuid
 from typing import Any
 
 from langsmith import Client as LangSmithClient
@@ -52,6 +53,11 @@ def _build_langsmith_clients() -> tuple[LangSmithClient, ...]:
     return tuple(clients)
 
 
+def _deterministic_feedback_id(run_id: str, key: str) -> str:
+    """Generate a deterministic UUID5 from run_id + key for upsert behavior."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{run_id}:{key}"))
+
+
 def create_langsmith_feedback(
     run_id: str,
     key: str,
@@ -60,12 +66,17 @@ def create_langsmith_feedback(
     comment: str | None = None,
     source_info: dict[str, Any] | None = None,
 ) -> bool:
-    """Create feedback on a LangSmith run, dual-writing to all configured environments."""
+    """Create feedback on a LangSmith run, dual-writing to all configured environments.
+
+    Uses a deterministic feedback_id so repeated calls for the same run+key
+    overwrite (upsert) rather than create duplicates.
+    """
     clients = _build_langsmith_clients()
     if not clients:
         logger.warning("No LangSmith clients configured for feedback")
         return False
 
+    feedback_id = _deterministic_feedback_id(run_id, key)
     any_success = False
     for client in clients:
         try:
@@ -76,6 +87,7 @@ def create_langsmith_feedback(
                 comment=comment,
                 source_info=source_info,
                 feedback_source_type="api",
+                feedback_id=feedback_id,
             )
             any_success = True
         except Exception:  # noqa: BLE001
@@ -94,14 +106,12 @@ def delete_langsmith_feedback(run_id: str, key: str) -> bool:
     if not clients:
         return False
 
+    feedback_id = _deterministic_feedback_id(run_id, key)
     any_success = False
     for client in clients:
         try:
-            feedbacks = list(client.list_feedback(run_ids=[run_id], feedback_key=[key]))
-            for fb in feedbacks:
-                client.delete_feedback(fb.id)
-            if feedbacks:
-                any_success = True
+            client.delete_feedback(feedback_id)
+            any_success = True
         except Exception:  # noqa: BLE001
             logger.warning(
                 "Failed to delete LangSmith feedback for run %s on %s",
