@@ -147,6 +147,27 @@ def select_slack_context_messages(
     return up_to_current, "thread_start"
 
 
+def _extract_file_content(message: dict[str, Any]) -> str:
+    """Extract text content from Slack message file attachments (snippets)."""
+    files = message.get("files")
+    if not isinstance(files, list):
+        return ""
+    parts: list[str] = []
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        # Slack text snippets have preview or plain_text content
+        content = f.get("plain_text") or f.get("preview") or ""
+        if not isinstance(content, str) or not content.strip():
+            continue
+        title = f.get("title", "")
+        if title:
+            parts.append(f"[file: {title}]\n{content.strip()}")
+        else:
+            parts.append(content.strip())
+    return "\n".join(parts)
+
+
 def format_slack_messages_for_prompt(
     messages: list[dict[str, Any]],
     user_names_by_id: dict[str, str] | None = None,
@@ -165,6 +186,7 @@ def format_slack_messages_for_prompt(
                 bot_user_id=bot_user_id,
                 bot_username=bot_username,
             ).strip()
+            or _extract_file_content(message)
             or "[non-text message]"
         )
         user_id = message.get("user")
