@@ -99,22 +99,14 @@ async def fetch_image_block(
         return None
 
 
-_TEXT_MIMETYPES = (
-    "text/",
-    "application/json",
-    "application/xml",
-    "application/javascript",
-    "application/x-yaml",
-    "application/x-sh",
-    "application/x-python",
-)
-
-
 async def fetch_slack_text_files(
     context_messages: list[dict[str, Any]],
     client: httpx.AsyncClient,
 ) -> list[dict[str, str]]:
     """Fetch text snippet/file content from Slack messages.
+
+    Detects text files by the presence of ``plain_text`` or ``preview``
+    fields, which Slack only includes for text-based files.
 
     Returns a list of dicts with keys: title, content.
     """
@@ -125,11 +117,9 @@ async def fetch_slack_text_files(
         for f in msg.get("files", []):
             if not isinstance(f, dict):
                 continue
-            mimetype = f.get("mimetype", "")
-            if not any(
-                mimetype.startswith(prefix) if prefix.endswith("/") else mimetype == prefix
-                for prefix in _TEXT_MIMETYPES
-            ):
+            # Slack includes plain_text/preview only for text-based files,
+            # so their presence is a reliable signal regardless of mimetype.
+            if not (f.get("plain_text") or f.get("preview")):
                 continue
 
             title = f.get("title") or f.get("name") or "Untitled snippet"

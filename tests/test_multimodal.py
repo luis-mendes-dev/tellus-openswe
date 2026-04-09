@@ -111,8 +111,8 @@ def test_fetch_slack_text_files_fetches_from_url_private() -> None:
         {
             "files": [
                 {
-                    "mimetype": "text/plain",
                     "title": "my snippet",
+                    "preview": "hello...",
                     "url_private": "https://files.slack.com/files/snippet.txt",
                 }
             ]
@@ -140,7 +140,6 @@ def test_fetch_slack_text_files_falls_back_to_inline_when_no_url() -> None:
         {
             "files": [
                 {
-                    "mimetype": "text/plain",
                     "title": "inline snippet",
                     "plain_text": "inline content here",
                 }
@@ -161,7 +160,6 @@ def test_fetch_slack_text_files_falls_back_to_inline_on_fetch_error() -> None:
         {
             "files": [
                 {
-                    "mimetype": "text/plain",
                     "title": "fallback snippet",
                     "url_private": "https://files.slack.com/files/fail.txt",
                     "preview": "preview content",
@@ -180,7 +178,8 @@ def test_fetch_slack_text_files_falls_back_to_inline_on_fetch_error() -> None:
     assert result[0] == {"title": "fallback snippet", "content": "preview content"}
 
 
-def test_fetch_slack_text_files_skips_image_files() -> None:
+def test_fetch_slack_text_files_skips_binary_files() -> None:
+    """Files without plain_text or preview are binary — should be skipped."""
     messages = [
         {
             "files": [
@@ -200,38 +199,13 @@ def test_fetch_slack_text_files_skips_image_files() -> None:
     mock_client.get.assert_not_called()
 
 
-def test_fetch_slack_text_files_handles_application_json() -> None:
-    messages = [
-        {
-            "files": [
-                {
-                    "mimetype": "application/json",
-                    "title": "config.json",
-                    "url_private": "https://files.slack.com/files/config.json",
-                }
-            ]
-        }
-    ]
-    mock_response = AsyncMock()
-    mock_response.text = '{"key": "value"}'
-    mock_response.raise_for_status = lambda: None
-
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.get.return_value = mock_response
-
-    result = asyncio.run(fetch_slack_text_files(messages, mock_client))
-
-    assert len(result) == 1
-    assert result[0] == {"title": "config.json", "content": '{"key": "value"}'}
-
-
 def test_fetch_slack_text_files_truncates_large_content() -> None:
     messages = [
         {
             "files": [
                 {
-                    "mimetype": "text/plain",
                     "title": "huge file",
+                    "preview": "x" * 100,
                     "url_private": "https://files.slack.com/files/huge.txt",
                 }
             ]
