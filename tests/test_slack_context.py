@@ -130,6 +130,34 @@ def test_convert_mentions_to_slack_format_preserves_existing_slack_mentions() ->
     assert convert_mentions_to_slack_format(text) == text
 
 
+def test_format_slack_messages_for_prompt_includes_attached_files() -> None:
+    formatted = format_slack_messages_for_prompt(
+        [
+            {
+                "ts": "1.0",
+                "text": "check this",
+                "user": "U123",
+                "files": [
+                    {"title": "snippet.py", "mimetype": "text/plain"},
+                    {"name": "data.json", "mimetype": "application/json"},
+                ],
+            }
+        ],
+        {"U123": "alice"},
+    )
+
+    assert formatted == "@alice(U123): check this [attached: snippet.py] [attached: data.json]"
+
+
+def test_format_slack_messages_for_prompt_no_files_no_annotation() -> None:
+    formatted = format_slack_messages_for_prompt(
+        [{"ts": "1.0", "text": "no files here", "user": "U123"}],
+        {"U123": "alice"},
+    )
+
+    assert formatted == "@alice(U123): no files here"
+
+
 def test_format_slack_messages_for_prompt_uses_name_and_id() -> None:
     formatted = format_slack_messages_for_prompt(
         [{"ts": "1.0", "text": "hello", "user": "U123"}],

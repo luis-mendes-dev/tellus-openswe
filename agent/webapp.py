@@ -787,22 +787,25 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
             and f.get("url_private")
         ]
     )
-    async with httpx.AsyncClient() as http_client:
-        if image_urls:
-            logger.info("Preparing %d image(s) for Slack mention", len(image_urls))
-            for image_url in image_urls:
-                image_block = await fetch_image_block(image_url, http_client)
-                if image_block:
-                    content_blocks.append(image_block)
+    has_files = any(msg.get("files") for msg in context_messages)
+    if image_urls or has_files:
+        async with httpx.AsyncClient() as http_client:
+            if image_urls:
+                logger.info("Preparing %d image(s) for Slack mention", len(image_urls))
+                for image_url in image_urls:
+                    image_block = await fetch_image_block(image_url, http_client)
+                    if image_block:
+                        content_blocks.append(image_block)
 
-        text_files = await fetch_slack_text_files(context_messages, http_client)
-        if text_files:
-            logger.info("Including %d text snippet(s) for Slack mention", len(text_files))
-            for tf in text_files:
-                snippet_block = create_text_block(
-                    f"## Slack Snippet: {tf['title']}\n```\n{tf['content']}\n```"
-                )
-                content_blocks.append(snippet_block)
+            if has_files:
+                text_files = await fetch_slack_text_files(context_messages, http_client)
+                if text_files:
+                    logger.info("Including %d text snippet(s) for Slack mention", len(text_files))
+                    for tf in text_files:
+                        snippet_block = create_text_block(
+                            f"## Slack Snippet: {tf['title']}\n```\n{tf['content']}\n```"
+                        )
+                        content_blocks.append(snippet_block)
 
     configurable: dict[str, Any] = {
         "repo": repo_config,

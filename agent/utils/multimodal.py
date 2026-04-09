@@ -134,31 +134,32 @@ async def fetch_slack_text_files(
 
             title = f.get("title") or f.get("name") or "Untitled snippet"
 
-            # Some snippets include content inline
+            # Prefer fetching full content from url_private; fall back to
+            # inline fields only when no URL is available (preview can be
+            # truncated by Slack).
+            url_private = f.get("url_private")
+            if url_private:
+                try:
+                    headers: dict[str, str] = {}
+                    if slack_bot_token:
+                        headers["Authorization"] = f"Bearer {slack_bot_token}"
+                    response = await client.get(
+                        url_private, headers=headers, follow_redirects=True
+                    )
+                    response.raise_for_status()
+                    content = response.text
+                    if len(content) > 50_000:
+                        content = content[:50_000] + "\n... (truncated)"
+                    results.append({"title": title, "content": content})
+                    logger.info("Fetched text snippet '%s' (%d chars)", title, len(content))
+                    continue
+                except Exception:
+                    logger.exception("Failed to fetch text file from %s", url_private)
+
+            # Fall back to inline content if URL fetch failed or unavailable
             inline = f.get("plain_text") or f.get("preview")
             if inline:
                 results.append({"title": title, "content": inline})
-                continue
-
-            url_private = f.get("url_private")
-            if not url_private:
-                continue
-
-            try:
-                headers: dict[str, str] = {}
-                if slack_bot_token:
-                    headers["Authorization"] = f"Bearer {slack_bot_token}"
-                response = await client.get(
-                    url_private, headers=headers, follow_redirects=True
-                )
-                response.raise_for_status()
-                content = response.text
-                if len(content) > 50_000:
-                    content = content[:50_000] + "\n... (truncated)"
-                results.append({"title": title, "content": content})
-                logger.info("Fetched text snippet '%s' (%d chars)", title, len(content))
-            except Exception:
-                logger.exception("Failed to fetch text file from %s", url_private)
 
     return results
 
