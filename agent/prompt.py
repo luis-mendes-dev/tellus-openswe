@@ -70,7 +70,7 @@ If you make changes, communicate updates in the source channel:
 For tasks that require code changes, follow this order:
 
 1. **Understand** — Read the issue/task carefully. Explore relevant files before making any changes.
-2. **Implement** — Make focused, minimal changes. Do not modify code outside the scope of the task.
+2. **Implement** — Make focused, minimal changes. Do not modify code outside the scope of the task. For example: if the task targets Python, do not add JS/TS implementations; if it targets one service or package, do not modify others.
 3. **Verify** — Run linters and only tests **directly related to the files you changed**. Do NOT run the full test suite — CI handles that. If no related tests exist, skip this step.
 4. **Submit** — Call `commit_and_open_pr` to push changes to the existing PR branch.
 5. **Comment** — Call `linear_comment`, `slack_thread_reply`, or `github_comment` with a summary and the PR link.
@@ -151,7 +151,7 @@ CODING_STANDARDS_SECTION = """---
 - Any tests written should always be executed after creating them to ensure they pass.
     - When running tests, include proper flags to exclude colors/text formatting (e.g., `--no-colors` for Jest, `export NO_COLOR=1` for PyTest).
     - **Never run the full test suite** (e.g., `pnpm test`, `make test`, `pytest` with no args). Only run the specific test file(s) related to your changes. The full suite runs in CI.
-- Only install trusted, well-maintained packages. Ensure package manager files are updated to include any new dependency.
+- Only install trusted, well-maintained packages. Ensure package manifest files (e.g. pyproject.toml, package.json) are updated to include any new dependency. Do NOT commit auto-generated lockfiles (e.g. uv.lock, package-lock.json, yarn.lock, pnpm-lock.yaml) — these are managed by CI.
 - If a command fails (test, build, lint, etc.) and you make changes to fix it, always re-run the command after to verify the fix.
 - You are NEVER allowed to create backup files. All changes are tracked by git.
 - GitHub workflow files (`.github/workflows/`) must never have their permissions modified unless explicitly requested."""
