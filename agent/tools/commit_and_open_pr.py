@@ -28,69 +28,12 @@ from ..utils.github import (
 from ..utils.github_app import get_github_app_installation_token
 from ..utils.github_token import get_github_token
 from ..utils.sandbox_paths import resolve_repo_dir
-from ..utils.sandbox_state import get_sandbox_backend
+from ..utils.sandbox_state import get_sandbox_backend_sync
 
 logger = logging.getLogger(__name__)
 
 
-def _run_blocking_git_ops(
-    sandbox_backend: Any,
-    config: dict[str, Any],
-    repo_name: str,
-    thread_id: str,
-    branch_name: str | None,
-    title: str,
-    commit_message: str | None,
-) -> dict[str, Any]:
-    """Run all blocking sandbox/git operations in a thread.
-
-    Returns a dict with either 'error' (failure) or 'target_branch' + 'github_token' + 'user_identity' (success).
-    """
-    repo_dir = resolve_repo_dir(sandbox_backend, repo_name)
-    github_token = get_github_token()
-    user_identity = resolve_triggering_user_identity(config, github_token)
-
-    has_uncommitted_changes = git_has_uncommitted_changes(sandbox_backend, repo_dir)
-    git_fetch_origin(sandbox_backend, repo_dir)
-    has_unpushed_commits = git_has_unpushed_commits(sandbox_backend, repo_dir)
-
-    if not (has_uncommitted_changes or has_unpushed_commits):
-        return {"error": "No changes detected", "pr_url": None}
-
-    current_branch = git_current_branch(sandbox_backend, repo_dir)
-    target_branch = branch_name if branch_name else f"open-swe/{thread_id}"
-    if current_branch != target_branch:
-        if branch_name:
-            result = sandbox_backend.execute(f"cd {repo_dir} && git checkout {target_branch}")
-            if result.exit_code != 0:
-                return {"error": f"Failed to checkout branch {target_branch}", "pr_url": None}
-        elif not git_checkout_branch(sandbox_backend, repo_dir, target_branch):
-            return {"error": f"Failed to checkout branch {target_branch}", "pr_url": None}
-
-    git_config_user(sandbox_backend, repo_dir, OPEN_SWE_BOT_NAME, OPEN_SWE_BOT_EMAIL)
-    git_add_all(sandbox_backend, repo_dir)
-
-    commit_msg = add_user_coauthor_trailer(commit_message or title, user_identity)
-    if has_uncommitted_changes:
-        commit_result = git_commit(sandbox_backend, repo_dir, commit_msg)
-        if commit_result.exit_code != 0:
-            return {"error": f"Git commit failed: {commit_result.output.strip()}", "pr_url": None}
-
-    if not github_token:
-        return {"error": "Missing GitHub token", "pr_url": None}
-
-    push_result = git_push(sandbox_backend, repo_dir, target_branch, github_token)
-    if push_result.exit_code != 0:
-        return {"error": f"Git push failed: {push_result.output.strip()}", "pr_url": None}
-
-    return {
-        "target_branch": target_branch,
-        "github_token": github_token,
-        "user_identity": user_identity,
-    }
-
-
-async def commit_and_open_pr(
+def commit_and_open_pr(
     title: str,
     body: str,
     commit_message: str | None = None,
@@ -192,9 +135,21 @@ async def commit_and_open_pr(
                 "pr_url": None,
             }
 
-        sandbox_backend = await get_sandbox_backend(thread_id)
+        sandbox_backend = get_sandbox_backend_sync(thread_id)
         if not sandbox_backend:
             return {"success": False, "error": "No sandbox found for thread", "pr_url": None}
+
+        repo_dir = resolve_repo_dir(sandbox_backend, repo_name)
+        github_token = get_github_token()
+        user_identity = resolve_triggering_user_identity(config, github_token)
+        pr_body = add_pr_collaboration_note(body, user_identity)
+
+        has_uncommitted_changes = git_has_uncommitted_changes(sandbox_backend, repo_dir)
+        git_fetch_origin(sandbox_backend, repo_dir)
+        has_unpushed_commits = git_has_unpushed_commits(sandbox_backend, repo_dir)
+
+        if not (has_uncommitted_changes or has_unpushed_commits):
+            return {"success": False, "error": "No changes detected", "pr_url": None}
 
         metadata = config.get("metadata", {})
         branch_name = metadata.get("branch_name")
@@ -219,12 +174,9 @@ async def commit_and_open_pr(
 
         git_config_user(
             sandbox_backend,
-            config,
-            repo_name,
-            thread_id,
-            branch_name,
-            title,
-            commit_message,
+            repo_dir,
+            OPEN_SWE_BOT_NAME,
+            OPEN_SWE_BOT_EMAIL,
         )
         git_add_all(sandbox_backend, repo_dir)
 
