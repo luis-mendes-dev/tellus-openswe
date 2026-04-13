@@ -20,15 +20,14 @@ class TestConfigureGithubProxy:
         expected_basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
 
         with (
-            patch("agent.integrations.langsmith.httpx.Client") as mock_client_cls,
+            patch("agent.integrations.langsmith.get_sync_http_client") as mock_get_client,
             patch.dict("os.environ", {"LANGSMITH_API_KEY": "ls-api-key"}),
         ):
             mock_client = MagicMock()
             mock_response = MagicMock()
             mock_response.raise_for_status = MagicMock()
             mock_client.patch.return_value = mock_response
-            mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_get_client.return_value = mock_client
 
             _configure_github_proxy("sandbox-abc123", token)
 
@@ -54,7 +53,7 @@ class TestConfigureGithubProxy:
     def test_sends_to_correct_url(self) -> None:
         """Verify the PATCH hits the right endpoint."""
         with (
-            patch("agent.integrations.langsmith.httpx.Client") as mock_client_cls,
+            patch("agent.integrations.langsmith.get_sync_http_client") as mock_get_client,
             patch.dict(
                 "os.environ",
                 {
@@ -67,8 +66,7 @@ class TestConfigureGithubProxy:
             mock_response = MagicMock()
             mock_response.raise_for_status = MagicMock()
             mock_client.patch.return_value = mock_response
-            mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_get_client.return_value = mock_client
 
             _configure_github_proxy("sandbox-xyz", "token")
 
@@ -78,15 +76,14 @@ class TestConfigureGithubProxy:
     def test_sends_api_key_header(self) -> None:
         """Verify the PATCH includes the LangSmith API key."""
         with (
-            patch("agent.integrations.langsmith.httpx.Client") as mock_client_cls,
+            patch("agent.integrations.langsmith.get_sync_http_client") as mock_get_client,
             patch.dict("os.environ", {"LANGSMITH_API_KEY": "my-api-key"}),
         ):
             mock_client = MagicMock()
             mock_response = MagicMock()
             mock_response.raise_for_status = MagicMock()
             mock_client.patch.return_value = mock_response
-            mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_get_client.return_value = mock_client
 
             _configure_github_proxy("sandbox-abc", "token")
 
@@ -96,15 +93,14 @@ class TestConfigureGithubProxy:
     def test_raises_on_http_error(self) -> None:
         """Verify HTTP errors propagate."""
         with (
-            patch("agent.integrations.langsmith.httpx.Client") as mock_client_cls,
+            patch("agent.integrations.langsmith.get_sync_http_client") as mock_get_client,
             patch.dict("os.environ", {"LANGSMITH_API_KEY": "api-key"}),
         ):
             mock_client = MagicMock()
             mock_client.patch.side_effect = httpx.HTTPStatusError(
                 "Server error", request=MagicMock(), response=MagicMock(status_code=500)
             )
-            mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_get_client.return_value = mock_client
 
             with pytest.raises(httpx.HTTPStatusError):
                 _configure_github_proxy("sandbox-abc", "token")
