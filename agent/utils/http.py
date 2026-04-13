@@ -6,6 +6,7 @@ import httpx
 
 _CLIENT_CACHE_MAX_SIZE = 10
 _CLIENT_CACHE: dict[str, httpx.AsyncClient] = {}
+_SYNC_CLIENT_CACHE: dict[str, httpx.Client] = {}
 
 
 def _create_http_client(base_url: str, timeout: float = 10.0) -> httpx.AsyncClient:
@@ -36,3 +37,33 @@ def get_http_client(base_url: str = "", timeout: float = 10.0) -> httpx.AsyncCli
         _CLIENT_CACHE[base_url] = _create_http_client(base_url, timeout)
 
     return _CLIENT_CACHE[base_url]
+
+
+def _create_sync_http_client(base_url: str, timeout: float = 10.0) -> httpx.Client:
+    return httpx.Client(
+        transport=httpx.HTTPTransport(
+            retries=3,
+            limits=httpx.Limits(max_keepalive_connections=40, keepalive_expiry=240.0),
+        ),
+        timeout=httpx.Timeout(timeout),
+        base_url=base_url,
+    )
+
+
+def get_sync_http_client(base_url: str = "", timeout: float = 10.0) -> httpx.Client:
+    """Get or create a cached sync HTTP client for the given base URL.
+
+    Returns a long-lived Client that reuses TCP connections.
+    Do NOT use this with ``with`` — the client is shared and must not be closed.
+    """
+    if base_url not in _SYNC_CLIENT_CACHE:
+        if len(_SYNC_CLIENT_CACHE) >= _CLIENT_CACHE_MAX_SIZE:
+            oldest_key = next(iter(_SYNC_CLIENT_CACHE))
+            _SYNC_CLIENT_CACHE.pop(oldest_key)
+        _SYNC_CLIENT_CACHE[base_url] = _create_sync_http_client(base_url, timeout)
+
+    cached_client = _SYNC_CLIENT_CACHE[base_url]
+    if cached_client.is_closed:
+        _SYNC_CLIENT_CACHE[base_url] = _create_sync_http_client(base_url, timeout)
+
+    return _SYNC_CLIENT_CACHE[base_url]

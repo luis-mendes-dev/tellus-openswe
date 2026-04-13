@@ -10,9 +10,10 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-import httpx
 from deepagents.backends import LangSmithSandbox
 from deepagents.backends.protocol import SandboxBackendProtocol
+
+from agent.utils.http import get_sync_http_client
 from langsmith.sandbox import SandboxClient, SandboxTemplate
 
 logger = logging.getLogger(__name__)
@@ -69,13 +70,13 @@ def _configure_github_proxy(sandbox_name: str, github_token: str) -> None:
             ]
         }
     }
-    with httpx.Client() as client:
-        response = client.patch(
-            url,
-            json=payload,
-            headers={"X-API-Key": api_key},
-        )
-        response.raise_for_status()
+    client = get_sync_http_client()
+    response = client.patch(
+        url,
+        json=payload,
+        headers={"X-API-Key": api_key},
+    )
+    response.raise_for_status()
     logger.info("Configured GitHub proxy for sandbox %s", sandbox_name)
 
 

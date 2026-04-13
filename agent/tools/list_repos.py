@@ -1,9 +1,8 @@
 import logging
 from typing import Any
 
-import httpx
-
 from ..utils.github_app import get_github_app_installation_token
+from ..utils.http import get_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +37,12 @@ async def list_repos(
         if token:
             headers["Authorization"] = f"Bearer {token}"
         path_prefix = "orgs" if is_organization else "users"
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://api.github.com/{path_prefix}/{organization_name}/repos",
-                headers=headers,
-                params={"per_page": min(per_page, 100), "sort": sort, "page": page},
-                timeout=10,
-            )
+        client = get_http_client()
+        response = await client.get(
+            f"https://api.github.com/{path_prefix}/{organization_name}/repos",
+            headers=headers,
+            params={"per_page": min(per_page, 100), "sort": sort, "page": page},
+        )
         if response.status_code == 200:
             repos: list[str] = [r["name"] for r in response.json()]
             if name_filter:
