@@ -6,8 +6,8 @@ Open SWE is designed to be forked and customized for your org. The core agent is
 # agent/server.py — the key lines
 return create_deep_agent(
     model=make_model(os.environ.get("LLM_MODEL_ID", DEFAULT_LLM_MODEL_ID), temperature=0, max_tokens=20_000),
-    system_prompt=construct_system_prompt(repo_dir, ...),
-    tools=[http_request, fetch_url, commit_and_open_pr, linear_comment, slack_thread_reply],
+    system_prompt=construct_system_prompt(...),
+    tools=[http_request, fetch_url, list_repos, get_branch_name, commit_and_open_pr, linear_comment, slack_thread_reply],
     backend=sandbox_backend,
     middleware=[
         ToolErrorMiddleware(),
@@ -84,7 +84,7 @@ The factory must return an object implementing `SandboxBackendProtocol` from `de
 
 If none of the built-in providers fit, you can build your own. The agent accepts any backend that implements `SandboxBackendProtocol` from `deepagents`. The protocol requires:
 
-- **File operations**: `ls_info()`, `read()`, `write()`, `edit()`, `glob_info()`, `grep_raw()`
+- **File operations**: `ls()`, `read()`, `write()`, `edit()`, `glob()`, `grep()`
 - **Shell execution**: `execute(command, timeout=None) -> ExecuteResponse`
 - **Identity**: `id` property returning a unique sandbox identifier
 
@@ -111,7 +111,7 @@ class MySandbox(BaseSandbox):
         )
 ```
 
-See `agent/integrations/langsmith.py` (`LangSmithBackend` class) for a full reference implementation.
+See `deepagents.backends.LangSmithSandbox` and `agent/integrations/langsmith.py` for a full reference implementation.
 
 ---
 
