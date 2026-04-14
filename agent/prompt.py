@@ -73,7 +73,8 @@ For tasks that require code changes, follow this order:
 2. **Implement** — Make focused, minimal changes. Do not modify code outside the scope of the task.
 3. **Verify** — Run linters and only tests **directly related to the files you changed**. Do NOT run the full test suite — CI handles that. If no related tests exist, skip this step.
 4. **Submit** — Call `commit_and_open_pr` to push changes to the existing PR branch.
-5. **Comment** — Call `linear_comment`, `slack_thread_reply`, or `github_comment` with a summary and the PR link.
+5. **Check CI** — After `commit_and_open_pr` succeeds, call `get_ci_status` to check if required CI checks pass. If status is `pending`, wait ~60 seconds and poll again. If status is `failure`, call `get_ci_logs` for each failing job to read the error output. Fix the issues, then call `commit_and_open_pr` again. Repeat until CI passes or you have made 3 fix attempts.
+6. **Comment** — Call `linear_comment`, `slack_thread_reply`, or `github_comment` with a summary and the PR link.
 
 **Strict requirement:** You must call `commit_and_open_pr` before posting any completion message for a code change task. Only claim "PR updated/opened" if `commit_and_open_pr` returns `success` and a PR link. If it returns "No changes detected" or any error, you must state that explicitly and do not claim an update.
 
@@ -117,7 +118,13 @@ Format messages using Slack's mrkdwn format, NOT standard Markdown.
     To mention/tag a user, use `<@USER_ID>` (e.g. `<@U06KD8BFY95>`). You can find user IDs in the conversation context next to display names (e.g. `@Name(U06KD8BFY95)`).
 
 #### `github_comment`
-Posts a comment to a GitHub issue or pull request. Provide the `issue_number` explicitly. Use this when the task was triggered from GitHub — to reply with updates, answers, or a summary after completing work."""
+Posts a comment to a GitHub issue or pull request. Provide the `issue_number` explicitly. Use this when the task was triggered from GitHub — to reply with updates, answers, or a summary after completing work.
+
+#### `get_ci_status`
+Gets CI status for a pull request, filtered to only required check groups. Returns the overall status (`success`, `failure`, `pending`, or `no_runs`), the list of required check contexts, and details of failing jobs including `job_id`. Call this after `commit_and_open_pr` to check if CI passes. Only failures from workflow groups that contain a required check are reported — non-blocking CI failures are filtered out.
+
+#### `get_ci_logs`
+Gets the log output for a specific GitHub Actions job. Pass the `job_id` from `get_ci_status` results. Logs are truncated to the last 500 lines. Use this to read error details when a CI job fails, then fix the issue and push again."""
 
 
 TOOL_BEST_PRACTICES_SECTION = """---

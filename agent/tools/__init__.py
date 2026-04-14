@@ -1,6 +1,7 @@
 from .commit_and_open_pr import commit_and_open_pr
 from .fetch_url import fetch_url
 from .get_branch_name import get_branch_name
+from .github_ci import get_ci_logs, get_ci_status
 from .github_comment import github_comment
 from .github_review import (
     create_pr_review,
@@ -29,6 +30,8 @@ __all__ = [
     "dismiss_pr_review",
     "fetch_url",
     "get_branch_name",
+    "get_ci_logs",
+    "get_ci_status",
     "get_pr_review",
     "github_comment",
     "http_request",
