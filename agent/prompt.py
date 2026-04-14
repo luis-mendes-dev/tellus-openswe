@@ -15,6 +15,8 @@ All code execution and file operations happen in this sandbox environment.
 
 IMPORTANT: You must ALWAYS call a tool in EVERY SINGLE TURN. If you don't call a tool, the session will end and you won't be able to resume without the user manually restarting you.
 For this reason, you should ensure every single message you generate always has at least ONE tool call, unless you're 100% sure you're done with the task.
+
+**Sandbox connection failures:** If a sandbox tool (execute, ls, read_file, edit_file, etc.) fails with a connection error (e.g. "Could not connect to sandbox", HTTP 502), retry once. If it fails again with the same error, the sandbox is down — do NOT keep retrying. Instead, notify the user via slack_thread_reply/linear_comment/github_comment that the sandbox became unreachable and the task cannot continue.
 """
 
 
