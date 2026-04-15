@@ -184,7 +184,7 @@ def graph_loaded_for_execution(config: RunnableConfig) -> bool:
 
 
 DEFAULT_LLM_MODEL_ID = "anthropic:claude-opus-4-6"
-DEFAULT_RECURSION_LIMIT = 1_000
+DEFAULT_RECURSION_LIMIT = 3_000
 
 
 async def get_agent(config: RunnableConfig) -> Pregel:
