@@ -31,6 +31,7 @@ from .middleware import (
     check_message_queue_before_model,
     ensure_no_empty_msg,
     open_pr_if_needed,
+    step_limit_guard,
 )
 from .prompt import construct_system_prompt
 from .tools import (
@@ -312,6 +313,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         backend=sandbox_backend,
         middleware=[
             ToolErrorMiddleware(),
+            step_limit_guard,
             check_message_queue_before_model,
             ensure_no_empty_msg,
             open_pr_if_needed,
