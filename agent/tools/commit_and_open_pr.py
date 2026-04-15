@@ -162,7 +162,7 @@ def commit_and_open_pr(
                 if result.exit_code != 0:
                     return {
                         "success": False,
-                        "error": f"Failed to checkout branch {target_branch}",
+                        "error": f"Failed to checkout branch {target_branch}: {result.output.strip()}",
                         "pr_url": None,
                     }
             elif not git_checkout_branch(sandbox_backend, repo_dir, target_branch):
