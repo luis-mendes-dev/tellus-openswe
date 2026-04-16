@@ -287,6 +287,9 @@ When you have completed your implementation, follow these steps in order:
    <1-3 sentences on WHY and the approach.
    NO "Changes:" section — file changes are already in the commit history.>
 
+   ## Release Note
+   <One-line changelog summary for self-hosted customers, or "none" for internal/CI/test/refactor changes.>
+
    ## Test Plan
    - [ ] <new/novel verification steps only — NOT "run existing tests" or "verify existing behavior">
    ```

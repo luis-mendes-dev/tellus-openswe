@@ -78,6 +78,11 @@ def commit_and_open_pr(
         DO NOT list files changed or enumerate code
         changes — that information is already in the commit history.>
 
+        ## Release Note
+        <One-line summary for the changelog, written for self-hosted customers.
+        Write "none" for changes that don't need a changelog entry
+        (internal, CI, tests, refactors, etc.)>
+
         ## Test Plan
         - [ ] <new test case or manual verification step ONLY for new behavior>
 
@@ -95,6 +100,9 @@ def commit_and_open_pr(
         The root cause was a missing null check in `getProfile`.
 
         Resolves AA-123
+
+        ## Release Note
+        Fixed authentication failure for users without profiles.
 
         ## Test Plan
         - [ ] Verify login works for users without profiles
