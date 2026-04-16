@@ -365,6 +365,109 @@ async def fetch_slack_thread_messages(channel_id: str, thread_ts: str) -> list[d
     return messages
 
 
+SLACK_MESSAGE_URL_RE = re.compile(
+    r"https?://[a-zA-Z0-9\-]+\.slack\.com/archives/([A-Z0-9]+)/p(\d{16})(?:\?[^\s>]*)?"
+)
+
+
+def parse_slack_message_url(url: str) -> tuple[str, str] | None:
+    """Parse a Slack message URL into (channel_id, message_ts).
+
+    URL format: https://{workspace}.slack.com/archives/{channel_id}/p{ts_without_dot}
+    The 16-digit timestamp becomes {first_10}.{last_6} (e.g. p1776281321762829 -> 1776281321.762829).
+    """
+    match = SLACK_MESSAGE_URL_RE.search(url)
+    if not match:
+        return None
+    channel_id = match.group(1)
+    raw_ts = match.group(2)
+    message_ts = f"{raw_ts[:10]}.{raw_ts[10:]}"
+    return channel_id, message_ts
+
+
+def extract_slack_message_urls(text: str) -> list[tuple[str, str, str]]:
+    """Extract all Slack message URLs from text.
+
+    Returns list of (full_url, channel_id, message_ts) tuples.
+    """
+    results: list[tuple[str, str, str]] = []
+    for match in SLACK_MESSAGE_URL_RE.finditer(text):
+        full_url = match.group(0)
+        channel_id = match.group(1)
+        raw_ts = match.group(2)
+        message_ts = f"{raw_ts[:10]}.{raw_ts[10:]}"
+        results.append((full_url, channel_id, message_ts))
+    return results
+
+
+async def fetch_slack_message_by_ts(
+    channel_id: str, message_ts: str
+) -> dict[str, Any] | None:
+    """Fetch a single Slack message by channel and timestamp."""
+    if not SLACK_BOT_TOKEN:
+        return None
+
+    async with httpx.AsyncClient() as http_client:
+        try:
+            response = await http_client.get(
+                f"{SLACK_API_BASE_URL}/conversations.history",
+                headers=_slack_headers(),
+                params={
+                    "channel": channel_id,
+                    "latest": message_ts,
+                    "oldest": message_ts,
+                    "inclusive": "true",
+                    "limit": 1,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("ok"):
+                logger.warning(
+                    "Slack conversations.history failed for channel=%s ts=%s: %s",
+                    channel_id,
+                    message_ts,
+                    data.get("error"),
+                )
+                return None
+            messages = data.get("messages", [])
+            if messages and isinstance(messages[0], dict):
+                return messages[0]
+        except httpx.HTTPError:
+            logger.exception(
+                "Slack conversations.history request failed for channel=%s ts=%s",
+                channel_id,
+                message_ts,
+            )
+    return None
+
+
+async def resolve_slack_message_url(url: str) -> dict[str, Any] | None:
+    """Resolve a Slack message URL to its message content.
+
+    Returns a dict with keys: text, user, ts, channel_id, files, thread_ts (if threaded).
+    """
+    parsed = parse_slack_message_url(url)
+    if not parsed:
+        return None
+
+    channel_id, message_ts = parsed
+    message = await fetch_slack_message_by_ts(channel_id, message_ts)
+    if not message:
+        return None
+
+    result: dict[str, Any] = {
+        "channel_id": channel_id,
+        "ts": message.get("ts", message_ts),
+        "text": message.get("text", ""),
+        "user": message.get("user", ""),
+        "files": message.get("files", []),
+    }
+    if message.get("thread_ts"):
+        result["thread_ts"] = message["thread_ts"]
+    return result
+
+
 async def post_slack_trace_reply(channel_id: str, thread_ts: str, run_id: str) -> None:
     """Post a trace URL reply in a Slack thread."""
     trace_url = get_langsmith_trace_url(run_id)
