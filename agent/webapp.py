@@ -782,9 +782,7 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
                         author = extra_names.get(author_id, author_id)
                     resolved_text = resolved.get("text", "(empty message)")
                     resolved_parts.append(
-                        f"**{link_url}**\n"
-                        f"  Author: {author}\n"
-                        f"  Message: {resolved_text}"
+                        f"**{link_url}**\n  Author: {author}\n  Message: {resolved_text}"
                     )
                     # Collect image URLs from resolved message files
                     for f in resolved.get("files", []):
@@ -800,13 +798,10 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
                     )
             except Exception:
                 logger.exception("Failed to resolve Slack link %s", link_url)
-                resolved_parts.append(
-                    f"**{link_url}**\n  (Error resolving link)"
-                )
+                resolved_parts.append(f"**{link_url}**\n  (Error resolving link)")
         if resolved_parts:
-            resolved_links_section = (
-                "\n\n## Cross-posted Slack Messages\n"
-                + "\n\n".join(resolved_parts)
+            resolved_links_section = "\n\n## Cross-posted Slack Messages\n" + "\n\n".join(
+                resolved_parts
             )
 
     prompt = (

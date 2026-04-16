@@ -61,11 +61,13 @@ def read_slack_message(url: str) -> dict[str, Any]:
         file_info = []
         for f in files:
             if isinstance(f, dict):
-                file_info.append({
-                    "name": f.get("name", ""),
-                    "mimetype": f.get("mimetype", ""),
-                    "url": f.get("url_private", ""),
-                })
+                file_info.append(
+                    {
+                        "name": f.get("name", ""),
+                        "mimetype": f.get("mimetype", ""),
+                        "url": f.get("url_private", ""),
+                    }
+                )
         if file_info:
             result["files"] = file_info
 

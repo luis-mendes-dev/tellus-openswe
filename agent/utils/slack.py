@@ -399,9 +399,7 @@ def extract_slack_message_urls(text: str) -> list[tuple[str, str, str]]:
     return results
 
 
-async def fetch_slack_message_by_ts(
-    channel_id: str, message_ts: str
-) -> dict[str, Any] | None:
+async def fetch_slack_message_by_ts(channel_id: str, message_ts: str) -> dict[str, Any] | None:
     """Fetch a single Slack message by channel and timestamp."""
     if not SLACK_BOT_TOKEN:
         return None
