@@ -79,18 +79,16 @@ def get_ci_status(pull_number: int) -> dict[str, Any]:
                 f"{base_url}/branches/{base_branch}/protection/required_status_checks",
                 headers=_github_headers(token),
             )
-            if protection_resp.status_code != 200:
-                return {
-                    "success": False,
-                    "error": f"Failed to fetch required status checks: {protection_resp.status_code}: {protection_resp.text}",
-                }
-            protection_data = protection_resp.json()
-            required_contexts = set()
-            for check in protection_data.get("checks", []):
-                required_contexts.add(check.get("context", ""))
-            for ctx in protection_data.get("contexts", []):
-                required_contexts.add(ctx)
-            required_contexts.discard("")
+            required_contexts: set[str] = set()
+            has_required_checks = False
+            if protection_resp.status_code == 200:
+                has_required_checks = True
+                protection_data = protection_resp.json()
+                for check in protection_data.get("checks", []):
+                    required_contexts.add(check.get("context", ""))
+                for ctx in protection_data.get("contexts", []):
+                    required_contexts.add(ctx)
+                required_contexts.discard("")
 
             # 3. Get workflow runs for the head SHA
             runs_resp = await client.get(
@@ -127,12 +125,14 @@ def get_ci_status(pull_number: int) -> dict[str, Any]:
 
                 jobs = jobs_resp.json().get("jobs", [])
 
-                # Check if this workflow group contains a required check
-                group_has_required = any(
-                    job["name"] in required_contexts for job in jobs
-                )
-                if not group_has_required:
-                    continue
+                # If we have required checks info, filter to only groups
+                # containing a required check. Otherwise, include all groups.
+                if has_required_checks:
+                    group_has_required = any(
+                        job["name"] in required_contexts for job in jobs
+                    )
+                    if not group_has_required:
+                        continue
 
                 # Include all failing jobs from this group
                 for job in jobs:
@@ -151,7 +151,7 @@ def get_ci_status(pull_number: int) -> dict[str, Any]:
             if failing_jobs:
                 overall = "failure"
             else:
-                # Check if any required jobs are still pending
+                # Check if any jobs are still pending
                 has_pending = False
                 for run in workflow_runs:
                     jobs_resp = await client.get(
@@ -161,8 +161,12 @@ def get_ci_status(pull_number: int) -> dict[str, Any]:
                     if jobs_resp.status_code != 200:
                         continue
                     for job in jobs_resp.json().get("jobs", []):
+                        is_relevant = (
+                            not has_required_checks
+                            or job["name"] in required_contexts
+                        )
                         if (
-                            job["name"] in required_contexts
+                            is_relevant
                             and job["status"] in ("queued", "in_progress")
                         ):
                             has_pending = True
@@ -171,13 +175,20 @@ def get_ci_status(pull_number: int) -> dict[str, Any]:
                         break
                 overall = "pending" if has_pending else "success"
 
-            return {
+            result: dict[str, Any] = {
                 "success": True,
                 "status": overall,
                 "head_sha": head_sha,
-                "required_contexts": sorted(required_contexts),
                 "failing_jobs": failing_jobs,
             }
+            if has_required_checks:
+                result["required_contexts"] = sorted(required_contexts)
+            else:
+                result["note"] = (
+                    "Could not determine required checks (branch protection not accessible). "
+                    "All failing jobs are reported. Treat all failures as potentially blocking."
+                )
+            return result
 
     return asyncio.run(_fetch())
 

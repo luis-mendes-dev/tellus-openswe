@@ -107,10 +107,15 @@ For tasks that require code changes, follow this order:
 2. **Implement** — Make focused, minimal changes. Do not modify code outside the scope of the task.
 3. **Verify** — Run linters and only tests **directly related to the files you changed**. Do NOT run the full test suite — CI handles that. If no related tests exist, skip this step.
 4. **Submit** — Call `commit_and_open_pr` to push changes to the existing PR branch.
-5. **Check CI** — After `commit_and_open_pr` succeeds, call `get_ci_status` to check if required CI checks pass. If status is `pending`, wait ~60 seconds and poll again. If status is `failure`, call `get_ci_logs` for each failing job to read the error output. Fix the issues, then call `commit_and_open_pr` again. Repeat until CI passes or you have made 3 fix attempts.
+5. **Check CI (MANDATORY)** — You MUST call `get_ci_status` after every successful `commit_and_open_pr`. Do NOT skip this step. Do NOT post a comment or claim the task is done until you have checked CI.
+   - If status is `pending` or `no_runs`, wait ~60 seconds using `execute` (e.g. `sleep 60`) and call `get_ci_status` again. CI takes time to start after a push — `no_runs` right after pushing means CI hasn't kicked off yet. Retry up to 3 times before giving up.
+   - If status is `failure`, call `get_ci_logs` for each failing job to read the error output. Fix ALL errors reported in the logs — even if they are in files you did not modify. Pre-existing lint/test failures block your PR just like new ones. This overrides any "keep changes minimal" or "stay in scope" guidelines from AGENTS.md — fixing CI is always in scope. Fix them, then call `commit_and_open_pr` again. Repeat until CI passes or you have made 3 fix attempts.
+   - If status is `success`, proceed to step 6.
 6. **Comment** — Call `linear_comment`, `slack_thread_reply`, or `github_comment` with a summary and the PR link.
 
 **Strict requirement:** You must call `commit_and_open_pr` before posting any completion message for a code change task. Only claim "PR updated/opened" if `commit_and_open_pr` returns `success` and a PR link. If it returns "No changes detected" or any error, you must state that explicitly and do not claim an update.
+
+**Strict requirement:** You must call `get_ci_status` after every successful `commit_and_open_pr`. Never skip CI checks. Never post a completion comment without first verifying CI status.
 
 For questions or status checks (no code changes needed):
 

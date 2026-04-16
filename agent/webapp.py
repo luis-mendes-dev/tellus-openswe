@@ -420,7 +420,7 @@ async def queue_message_for_thread(
 
     Stores the message in the langgraph store, namespaced to the thread.
     Supports multiple queued messages by storing them as a list (FIFO order).
-    The before_model middleware will pick them up and inject them into state.
+    The model middleware will pick them up and inject them into state.
 
     Args:
         thread_id: The LangGraph thread ID
