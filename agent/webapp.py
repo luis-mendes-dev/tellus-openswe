@@ -41,14 +41,13 @@ from .utils.multimodal import dedupe_urls, extract_image_urls, fetch_image_block
 from .utils.repo import extract_repo_from_text
 from .utils.slack import (
     add_slack_reaction,
-    extract_slack_message_urls,
     fetch_slack_thread_messages,
     format_slack_messages_for_prompt,
     get_slack_user_info,
     get_slack_user_names,
     post_slack_thread_reply,
     post_slack_trace_reply,
-    resolve_slack_message_url,
+    resolve_slack_links_in_context,
     select_slack_context_messages,
     strip_bot_mention,
     verify_slack_signature,
@@ -761,48 +760,9 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
     trigger_user = user_name or (f"<@{user_id}>" if user_id else "Unknown user")
 
     # Auto-resolve cross-posted Slack message links in context
-    resolved_links_section = ""
-    image_urls_from_links: list[str] = []
-    all_context_text = " ".join(msg.get("text", "") for msg in context_messages)
-    slack_links = extract_slack_message_urls(all_context_text)
-    seen_urls: set[str] = set()
-    if slack_links:
-        resolved_parts: list[str] = []
-        for link_url, _cid, _ts in slack_links:
-            if link_url in seen_urls:
-                continue
-            seen_urls.add(link_url)
-            try:
-                resolved = await resolve_slack_message_url(link_url)
-                if resolved:
-                    author_id = resolved.get("user", "")
-                    author = user_names_by_id.get(author_id, author_id)
-                    if author_id and author == author_id:
-                        extra_names = await get_slack_user_names([author_id])
-                        author = extra_names.get(author_id, author_id)
-                    resolved_text = resolved.get("text", "(empty message)")
-                    resolved_parts.append(
-                        f"**{link_url}**\n  Author: {author}\n  Message: {resolved_text}"
-                    )
-                    # Collect image URLs from resolved message files
-                    for f in resolved.get("files", []):
-                        if (
-                            isinstance(f, dict)
-                            and f.get("mimetype", "").startswith("image/")
-                            and f.get("url_private")
-                        ):
-                            image_urls_from_links.append(f["url_private"])
-                else:
-                    resolved_parts.append(
-                        f"**{link_url}**\n  (Could not fetch — bot may not have access)"
-                    )
-            except Exception:
-                logger.exception("Failed to resolve Slack link %s", link_url)
-                resolved_parts.append(f"**{link_url}**\n  (Error resolving link)")
-        if resolved_parts:
-            resolved_links_section = "\n\n## Cross-posted Slack Messages\n" + "\n\n".join(
-                resolved_parts
-            )
+    resolved_links_section, image_urls_from_links = await resolve_slack_links_in_context(
+        context_messages, user_names_by_id
+    )
 
     prompt = (
         "You were mentioned in Slack.\n\n"
@@ -811,11 +771,11 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
         f"## Slack Thread\n- Channel: {channel_id}\n- Thread TS: {thread_ts}\n"
         f"- Context starts at: {context_source}\n\n"
         f"## Conversation Context\n{context_text}\n\n"
-        f"## Latest Mention Request\n{clean_text}"
-        f"{resolved_links_section}\n\n"
-        "Use `slack_thread_reply` to communicate in this Slack thread for clarifications, "
-        "status updates, and final summaries. Use `read_slack_message` to read any additional "
-        "Slack message links you encounter."
+        f"## Latest Mention Request\n{clean_text}\n\n"
+        + (f"{resolved_links_section}\n\n" if resolved_links_section else "")
+        + "Use `slack_thread_reply` to communicate in this Slack thread for clarifications, "
+        "status updates, and final summaries. Use `slack_read_thread_messages` to read any "
+        "Slack messages by providing channel_id and message_ts."
     )
     content_blocks: list[dict[str, Any]] = [create_text_block(prompt)]
 

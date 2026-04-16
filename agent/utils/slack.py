@@ -465,6 +465,65 @@ async def resolve_slack_message_url(url: str) -> dict[str, Any] | None:
     return result
 
 
+async def resolve_slack_links_in_context(
+    context_messages: list[dict[str, Any]],
+    user_names_by_id: dict[str, str],
+) -> tuple[str, list[str]]:
+    """Resolve cross-posted Slack message links found in context messages.
+
+    Returns (resolved_links_section, image_urls) where resolved_links_section
+    is a formatted markdown string for the prompt, and image_urls is a list
+    of image URLs from resolved message attachments.
+    """
+    all_context_text = " ".join(msg.get("text", "") for msg in context_messages)
+    slack_links = extract_slack_message_urls(all_context_text)
+    if not slack_links:
+        return "", []
+
+    resolved_parts: list[str] = []
+    image_urls: list[str] = []
+    seen_urls: set[str] = set()
+
+    for link_url, _cid, _ts in slack_links:
+        if link_url in seen_urls:
+            continue
+        seen_urls.add(link_url)
+        try:
+            resolved = await resolve_slack_message_url(link_url)
+            if resolved:
+                author_id = resolved.get("user", "")
+                author = user_names_by_id.get(author_id, author_id)
+                if author_id and author == author_id:
+                    extra_names = await get_slack_user_names([author_id])
+                    author = extra_names.get(author_id, author_id)
+                resolved_text = resolved.get("text", "(empty message)")
+                resolved_parts.append(
+                    f"**{link_url}**\n  Author: {author}\n  Message: {resolved_text}"
+                )
+                for f in resolved.get("files", []):
+                    if (
+                        isinstance(f, dict)
+                        and f.get("mimetype", "").startswith("image/")
+                        and f.get("url_private")
+                    ):
+                        image_urls.append(f["url_private"])
+            else:
+                resolved_parts.append(
+                    f"**{link_url}**\n  (Could not fetch — bot may not have access)"
+                )
+        except Exception:
+            logger.exception("Failed to resolve Slack link %s", link_url)
+            resolved_parts.append(f"**{link_url}**\n  (Error resolving link)")
+
+    resolved_links_section = ""
+    if resolved_parts:
+        resolved_links_section = "\n\n## Cross-posted Slack Messages\n" + "\n\n".join(
+            resolved_parts
+        )
+
+    return resolved_links_section, image_urls
+
+
 async def post_slack_trace_reply(channel_id: str, thread_ts: str, run_id: str) -> None:
     """Post a trace URL reply in a Slack thread."""
     trace_url = get_langsmith_trace_url(run_id)
