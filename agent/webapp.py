@@ -765,9 +765,13 @@ async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[st
     image_urls_from_links: list[str] = []
     all_context_text = " ".join(msg.get("text", "") for msg in context_messages)
     slack_links = extract_slack_message_urls(all_context_text)
+    seen_urls: set[str] = set()
     if slack_links:
         resolved_parts: list[str] = []
         for link_url, _cid, _ts in slack_links:
+            if link_url in seen_urls:
+                continue
+            seen_urls.add(link_url)
             try:
                 resolved = await resolve_slack_message_url(link_url)
                 if resolved:

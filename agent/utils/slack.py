@@ -366,7 +366,7 @@ async def fetch_slack_thread_messages(channel_id: str, thread_ts: str) -> list[d
 
 
 SLACK_MESSAGE_URL_RE = re.compile(
-    r"https?://[a-zA-Z0-9\-]+\.slack\.com/archives/([A-Z0-9]+)/p(\d{16})(?:\?[^\s>]*)?"
+    r"https?://[a-zA-Z0-9\-]+\.slack\.com/archives/([A-Za-z0-9]+)/p(\d{16})(?:\?[^\s>]*)?"
 )
 
 
@@ -393,10 +393,9 @@ def extract_slack_message_urls(text: str) -> list[tuple[str, str, str]]:
     results: list[tuple[str, str, str]] = []
     for match in SLACK_MESSAGE_URL_RE.finditer(text):
         full_url = match.group(0)
-        channel_id = match.group(1)
-        raw_ts = match.group(2)
-        message_ts = f"{raw_ts[:10]}.{raw_ts[10:]}"
-        results.append((full_url, channel_id, message_ts))
+        parsed = parse_slack_message_url(full_url)
+        if parsed:
+            results.append((full_url, parsed[0], parsed[1]))
     return results
 
 
