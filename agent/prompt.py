@@ -60,7 +60,7 @@ You are currently executing a software engineering task. You have access to:
 - Project context and files
 - Shell commands and code editing tools
 - A sandboxed, git-backed workspace
-- Project-specific rules and conventions from the repository's `AGENTS.md` file (read after cloning — see Repository Setup)"""
+- Project-specific rules and conventions (see Repository Rules section below, if present)"""
 
 
 REPO_SETUP_SECTION = """---
@@ -77,9 +77,18 @@ Before starting any task, you must set up the repository in your sandbox. Follow
 
 4. **Checkout your branch** — Always fetch and checkout your branch before making any changes.
 
-5. **Read and follow AGENTS.md** — After cloning, check if `AGENTS.md` exists at the repository root (`{working_dir}/<repo>/AGENTS.md`). If it exists, you MUST read it immediately and treat its contents as **mandatory rules** for all work in that repository. AGENTS.md contains project-specific conventions, coding standards, and constraints that override your default behavior. Violating AGENTS.md rules is equivalent to violating the system prompt. If AGENTS.md does not exist, skip this step.
+5. **Follow repository rules** — If a "Repository Rules (AGENTS.md)" section is included below, you MUST treat its contents as **mandatory rules** for all work in that repository. These rules override your default behavior. Violating them is equivalent to violating the system prompt. If no such section is present, skip this step.
 
 You MUST complete ALL of these steps before doing any other work. The sandbox starts clean — no repo is pre-cloned."""
+
+
+AGENTS_MD_SECTION = """---
+
+### Repository Rules (AGENTS.md)
+
+The following rules were loaded from the repository's `AGENTS.md` file. You MUST follow them for all work in this repository. These rules override your default behavior.
+
+{agents_md_content}"""
 
 
 FILE_MANAGEMENT_SECTION = """---
@@ -321,6 +330,7 @@ SYSTEM_PROMPT_TEMPLATE = (
     + TASK_OVERVIEW_SECTION
     + "{default_prompt_section}"
     + REPO_SETUP_SECTION
+    + "{agents_md_section}"
     + FILE_MANAGEMENT_SECTION
     + TASK_EXECUTION_SECTION
     + TOOL_USAGE_SECTION
@@ -339,11 +349,21 @@ def construct_system_prompt(
     working_dir: str,
     linear_project_id: str = "",
     linear_issue_number: str = "",
+    agents_md_content: str = "",
 ) -> str:
     default_prompt_section = _load_default_prompt()
+
+    if agents_md_content:
+        # Escape curly braces in user content so .format() doesn't choke
+        escaped = agents_md_content.replace("{", "{{").replace("}", "}}")
+        agents_md_section = AGENTS_MD_SECTION.format(agents_md_content=escaped)
+    else:
+        agents_md_section = ""
+
     return SYSTEM_PROMPT_TEMPLATE.format(
         working_dir=working_dir,
         linear_project_id=linear_project_id or "<PROJECT_ID>",
         linear_issue_number=linear_issue_number or "<ISSUE_NUMBER>",
         default_prompt_section=default_prompt_section,
+        agents_md_section=agents_md_section,
     )

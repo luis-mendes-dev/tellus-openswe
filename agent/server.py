@@ -58,6 +58,7 @@ from .tools import (
     web_search,
 )
 from .utils.auth import resolve_github_token
+from .utils.github import fetch_agents_md
 from .utils.github_app import get_github_app_installation_token
 from .utils.model import make_model
 from .utils.sandbox import create_sandbox
@@ -271,6 +272,16 @@ async def get_agent(config: RunnableConfig) -> Pregel:
     linear_project_id = linear_issue.get("linear_project_id", "")
     linear_issue_number = linear_issue.get("linear_issue_number", "")
 
+    repo_config = config["configurable"].get("repo", {})
+    repo_owner = repo_config.get("owner", "")
+    repo_name = repo_config.get("name", "")
+
+    agents_md_content = ""
+    if repo_owner and repo_name and github_token:
+        agents_md_content = await fetch_agents_md(repo_owner, repo_name, github_token)
+        if agents_md_content:
+            logger.info("Loaded AGENTS.md for %s/%s", repo_owner, repo_name)
+
     work_dir = await aresolve_sandbox_work_dir(sandbox_backend)
 
     logger.info("Returning agent with sandbox for thread %s", thread_id)
@@ -283,6 +294,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
             working_dir=work_dir,
             linear_project_id=linear_project_id,
             linear_issue_number=linear_issue_number,
+            agents_md_content=agents_md_content,
         ),
         tools=[
             http_request,

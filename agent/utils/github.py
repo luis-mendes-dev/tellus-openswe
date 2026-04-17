@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import shlex
 
@@ -280,3 +281,42 @@ async def get_github_default_branch(
     except httpx.HTTPError:
         logger.exception("Failed to get default branch from GitHub API, falling back to 'main'")
         return "main"
+
+
+async def fetch_agents_md(
+    repo_owner: str,
+    repo_name: str,
+    github_token: str,
+) -> str:
+    """Fetch AGENTS.md from the root of a GitHub repository.
+
+    Returns the file content as a string, or empty string if not found.
+    """
+    try:
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.get(
+                f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/AGENTS.md",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+
+            if response.status_code == 200:  # noqa: PLR2004
+                data = response.json()
+                content_b64 = data.get("content", "")
+                return base64.b64decode(content_b64).decode("utf-8").strip()
+
+            logger.debug(
+                "AGENTS.md not found for %s/%s (status %s)",
+                repo_owner,
+                repo_name,
+                response.status_code,
+            )
+            return ""
+
+    except (httpx.HTTPError, Exception):
+        logger.warning("Failed to fetch AGENTS.md for %s/%s", repo_owner, repo_name)
+        return ""
+
