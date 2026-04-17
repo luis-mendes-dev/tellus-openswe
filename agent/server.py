@@ -23,6 +23,7 @@ warnings.filterwarnings("ignore", message=".*Pydantic V1.*", category=UserWarnin
 # Now safe to import agent (which imports LangChain modules)
 from deepagents import create_deep_agent
 from deepagents.backends.protocol import SandboxBackendProtocol
+from langchain.agents.middleware import ModelCallLimitMiddleware
 from langsmith.sandbox import SandboxClientError
 
 from .integrations.langsmith import _configure_github_proxy
@@ -30,6 +31,7 @@ from .middleware import (
     ToolErrorMiddleware,
     check_message_queue_before_model,
     ensure_no_empty_msg,
+    notify_step_limit_reached,
     open_pr_if_needed,
 )
 from .prompt import construct_system_prompt
@@ -311,9 +313,11 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         ],
         backend=sandbox_backend,
         middleware=[
+            ModelCallLimitMiddleware(run_limit=60, exit_behavior="end"),
             ToolErrorMiddleware(),
             check_message_queue_before_model,
             ensure_no_empty_msg,
             open_pr_if_needed,
+            notify_step_limit_reached,
         ],
     ).with_config(config)
