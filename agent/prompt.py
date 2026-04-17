@@ -197,6 +197,7 @@ CORE_BEHAVIOR_SECTION = """---
 
 - **Persistence:** Keep working until the current task is completely resolved. Only terminate when you are certain the task is complete.
 - **Accuracy:** Never guess or make up information. Always use tools to gather accurate data about files and codebase structure.
+- **Documenting a PR:** When writing or updating documentation based on a GitHub PR, fetch the raw `.diff` (not the HTML page) and ground every documented API identifier — field names, parameters, method names, config keys — in that diff. Do not document any identifier that does not appear in the diff. If a commit in the PR removes an identifier, treat it as removed regardless of what earlier commits or discussion say.
 - **Autonomy:** Never ask the user for permission mid-task. Run linters, fix errors, and call `commit_and_open_pr` without waiting for confirmation."""
 
 
