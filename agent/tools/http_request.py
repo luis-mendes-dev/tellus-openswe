@@ -107,6 +107,10 @@ def http_request(
 ) -> dict[str, Any]:
     """Make HTTP requests to APIs and web services.
 
+    Do NOT use this tool to create, update, or otherwise manage GitHub pull requests —
+    always use the `commit_and_open_pr` tool for that. This tool sends no GitHub
+    authentication and will receive a 401 Unauthorized response from the GitHub API.
+
     Args:
         url: Target URL
         method: HTTP method (GET, POST, PUT, DELETE, etc.)
