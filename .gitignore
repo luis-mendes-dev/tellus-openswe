@@ -24,6 +24,7 @@
 # misc
 .DS_Store
 *.pem
+!.github/ci/fake_github_app_key.pem
 
 # debug
 npm-debug.log*
