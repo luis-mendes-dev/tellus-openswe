@@ -19,7 +19,7 @@ dependencies = [
     "langchain-anthropic>1.1.0",
     "langgraph-cli[inmem]>=0.4.21",
     "langsmith>=0.7.32",
-    "langchain-openai==1.1.13",
+    "langchain-openai==1.1.14",
     "langchain-daytona>=0.0.5",
     "langchain-modal>=0.0.3",
     "langchain-runloop>=0.0.4",
