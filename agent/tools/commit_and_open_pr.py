@@ -160,17 +160,24 @@ def commit_and_open_pr(
                 # Existing branch — plain checkout, do not create or reset
                 result = git_checkout_existing_branch(sandbox_backend, repo_dir, target_branch)
                 if result.exit_code != 0:
-                    return {
-                        "success": False,
-                        "error": f"Failed to checkout branch {target_branch}",
-                        "pr_url": None,
-                    }
+                    # Raise so ToolErrorMiddleware marks the ToolMessage as
+                    # status="error" AND the model sees git's actual stderr,
+                    # instead of a silent `{"success": false, ...}` dict it
+                    # will just retry 4–14 times (see forge issue tracker).
+                    raise RuntimeError(
+                        f"Failed to checkout existing branch {target_branch} "
+                        f"(git exit_code={result.exit_code}): {result.output.strip()}. "
+                        f"Inspect with `git status` and `git branch -a` in {repo_dir}; "
+                        f"do not retry this tool with identical args."
+                    )
             elif not git_checkout_branch(sandbox_backend, repo_dir, target_branch):
-                return {
-                    "success": False,
-                    "error": f"Failed to checkout branch {target_branch}",
-                    "pr_url": None,
-                }
+                raise RuntimeError(
+                    f"Failed to create/checkout branch {target_branch} in {repo_dir}. "
+                    f"The branch could not be created (likely a dirty working tree, "
+                    f"detached HEAD, or a permissions/remote issue). Run `git status` "
+                    f"and `git branch -a` in the repo to diagnose; do not retry "
+                    f"this tool with identical args."
+                )
 
         git_config_user(
             sandbox_backend,
@@ -184,27 +191,28 @@ def commit_and_open_pr(
         if has_uncommitted_changes:
             commit_result = git_commit(sandbox_backend, repo_dir, commit_msg)
             if commit_result.exit_code != 0:
-                return {
-                    "success": False,
-                    "error": f"Git commit failed: {commit_result.output.strip()}",
-                    "pr_url": None,
-                }
+                raise RuntimeError(
+                    f"Git commit failed (exit_code={commit_result.exit_code}): "
+                    f"{commit_result.output.strip()}"
+                )
 
         installation_token = asyncio.run(get_github_app_installation_token())
         if not installation_token:
-            return {
-                "success": False,
-                "error": "Failed to get GitHub App installation token",
-                "pr_url": None,
-            }
+            raise RuntimeError(
+                "Failed to get GitHub App installation token — check that the "
+                "GitHub App is installed on the target repo and that its "
+                "credentials are configured; do not retry this tool with "
+                "identical args."
+            )
 
         push_result = git_push(sandbox_backend, repo_dir, target_branch)
         if push_result.exit_code != 0:
-            return {
-                "success": False,
-                "error": f"Git push failed: {push_result.output.strip()}",
-                "pr_url": None,
-            }
+            raise RuntimeError(
+                f"Git push to {target_branch} failed "
+                f"(exit_code={push_result.exit_code}): {push_result.output.strip()}. "
+                f"Check remote auth and branch protection; do not retry this "
+                f"tool with identical args."
+            )
 
         base_branch = asyncio.run(
             get_github_default_branch(repo_owner, repo_name, installation_token)
@@ -222,12 +230,13 @@ def commit_and_open_pr(
         )
 
         if not pr_url:
-            return {
-                "success": False,
-                "error": "Failed to create GitHub PR",
-                "pr_url": None,
-                "pr_existing": False,
-            }
+            raise RuntimeError(
+                f"Failed to create GitHub PR for {repo_owner}/{repo_name} "
+                f"from head={target_branch} base={base_branch}. Likely causes: "
+                f"branch has no commits yet, GitHub App lacks PR permission, or "
+                f"API returned a validation error. Check `gh api` or the GitHub "
+                f"audit log; do not retry this tool with identical args."
+            )
 
         return {
             "success": True,
