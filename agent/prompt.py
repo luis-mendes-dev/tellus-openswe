@@ -301,6 +301,8 @@ When you have completed your implementation, follow these steps in order:
 
 **IMPORTANT: Never claim a PR was created or updated unless `commit_and_open_pr` returned `success` and a PR link. If it returns "No changes detected" or any error, report that instead.**
 
+**IMPORTANT: If `commit_and_open_pr` returns `"fatal": true` or an error message containing "Do not retry", stop immediately — do NOT call `commit_and_open_pr` again. These are infrastructure failures that cannot be fixed by retrying the same tool. Report the failure and end the task.**
+
 4. **Notify the source** immediately after `commit_and_open_pr` succeeds. Include a brief summary and the PR link:
    - Linear-triggered: use `linear_comment` with an `@mention` of the user who triggered the task
    - Slack-triggered: use `slack_thread_reply`

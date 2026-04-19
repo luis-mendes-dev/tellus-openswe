@@ -52,17 +52,19 @@ def git_current_branch(sandbox_backend: SandboxBackendProtocol, repo_dir: str) -
 
 def git_checkout_branch(
     sandbox_backend: SandboxBackendProtocol, repo_dir: str, branch: str
-) -> bool:
-    """Checkout branch, creating it if needed."""
+) -> tuple[bool, str]:
+    """Checkout branch, creating it if needed. Returns (success, error_output)."""
     safe_branch = shlex.quote(branch)
     checkout_result = _run_git(sandbox_backend, repo_dir, f"git checkout -B {safe_branch}")
     if checkout_result.exit_code == 0:
-        return True
+        return True, ""
     fallback_create = _run_git(sandbox_backend, repo_dir, f"git checkout -b {safe_branch}")
     if fallback_create.exit_code == 0:
-        return True
+        return True, ""
     fallback = _run_git(sandbox_backend, repo_dir, f"git checkout {safe_branch}")
-    return fallback.exit_code == 0
+    if fallback.exit_code == 0:
+        return True, ""
+    return False, fallback.output.strip() or checkout_result.output.strip()
 
 
 def git_checkout_existing_branch(

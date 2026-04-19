@@ -162,15 +162,19 @@ def commit_and_open_pr(
                 if result.exit_code != 0:
                     return {
                         "success": False,
-                        "error": f"Failed to checkout branch {target_branch}",
+                        "error": f"Failed to checkout branch {target_branch}: {result.output.strip()}. Do not retry this tool — the git environment needs manual inspection.",
                         "pr_url": None,
+                        "fatal": True,
                     }
-            elif not git_checkout_branch(sandbox_backend, repo_dir, target_branch):
-                return {
-                    "success": False,
-                    "error": f"Failed to checkout branch {target_branch}",
-                    "pr_url": None,
-                }
+            else:
+                ok, git_err = git_checkout_branch(sandbox_backend, repo_dir, target_branch)
+                if not ok:
+                    return {
+                        "success": False,
+                        "error": f"Failed to checkout branch {target_branch}: {git_err}. Do not retry this tool — the git environment needs manual inspection.",
+                        "pr_url": None,
+                        "fatal": True,
+                    }
 
         git_config_user(
             sandbox_backend,
@@ -224,9 +228,10 @@ def commit_and_open_pr(
         if not pr_url:
             return {
                 "success": False,
-                "error": "Failed to create GitHub PR",
+                "error": "Failed to create GitHub PR. Do not retry this tool — if the push succeeded, the PR may need to be opened manually.",
                 "pr_url": None,
                 "pr_existing": False,
+                "fatal": True,
             }
 
         return {
