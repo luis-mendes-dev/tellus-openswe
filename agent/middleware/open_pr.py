@@ -165,14 +165,16 @@ async def open_pr_if_needed(
         base_branch = await get_github_default_branch(repo_owner, repo_name, installation_token)
         logger.info("Using base branch: %s", base_branch)
 
+        pr_creation_token = github_token or installation_token
         await create_github_pr(
             repo_owner=repo_owner,
             repo_name=repo_name,
-            github_token=installation_token,
+            github_token=pr_creation_token,
             title=pr_title,
             head_branch=target_branch,
             base_branch=base_branch,
             body=pr_body,
+            fallback_token=installation_token if github_token else None,
         )
 
         logger.info("After-agent middleware completed successfully")

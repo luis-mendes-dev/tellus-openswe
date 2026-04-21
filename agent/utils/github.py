@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shlex
+from typing import Any
 
 import httpx
 from deepagents.backends.protocol import ExecuteResponse, SandboxBackendProtocol
@@ -129,17 +130,23 @@ async def create_github_pr(
     head_branch: str,
     base_branch: str,
     body: str,
+    fallback_token: str | None = None,
 ) -> tuple[str | None, int | None, bool]:
     """Create a draft GitHub pull request via the API.
 
     Args:
         repo_owner: Repository owner (e.g., "langchain-ai")
         repo_name: Repository name (e.g., "deepagents")
-        github_token: GitHub access token
+        github_token: Preferred GitHub access token used to open the PR.
+            When this is the triggering user's OAuth token, the PR will be
+            authored by that user so it shows up under ``author:@me`` search.
         title: PR title
         head_branch: Source branch name
         base_branch: Target branch name
         body: PR description
+        fallback_token: Optional token to retry with if ``github_token``
+            cannot create the PR (e.g., when the user's OAuth token lacks
+            access to the repo). Typically the GitHub App installation token.
 
     Returns:
         Tuple of (pr_url, pr_number, pr_existing) if successful, (None, None, False) otherwise
@@ -161,52 +168,92 @@ async def create_github_pr(
     )
 
     async with httpx.AsyncClient() as http_client:
-        try:
-            pr_response = await http_client.post(
-                f"https://api.github.com/repos/{repo_owner}/{repo_name}/pulls",
-                headers={
-                    "Authorization": f"Bearer {github_token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                json=pr_payload,
+        result = await _create_pr_with_token(
+            http_client=http_client,
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            github_token=github_token,
+            head_branch=head_branch,
+            pr_payload=pr_payload,
+        )
+        if result is not None:
+            return result
+
+        if fallback_token and fallback_token != github_token:
+            logger.info("Retrying PR creation with fallback token")
+            fallback_result = await _create_pr_with_token(
+                http_client=http_client,
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                github_token=fallback_token,
+                head_branch=head_branch,
+                pr_payload=pr_payload,
+            )
+            if fallback_result is not None:
+                return fallback_result
+
+        return None, None, False
+
+
+async def _create_pr_with_token(
+    http_client: httpx.AsyncClient,
+    repo_owner: str,
+    repo_name: str,
+    github_token: str,
+    head_branch: str,
+    pr_payload: dict[str, Any],
+) -> tuple[str | None, int | None, bool] | None:
+    """Attempt to create (or find existing) PR with the given token.
+
+    Returns a tuple on success/found-existing, or None to signal the caller
+    should try a fallback token.
+    """
+    try:
+        pr_response = await http_client.post(
+            f"https://api.github.com/repos/{repo_owner}/{repo_name}/pulls",
+            headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json=pr_payload,
+        )
+
+        pr_data = pr_response.json()
+
+        if pr_response.status_code == HTTP_CREATED:
+            pr_url = pr_data.get("html_url")
+            pr_number = pr_data.get("number")
+            logger.info("PR created successfully: %s", pr_url)
+            return pr_url, pr_number, False
+
+        if pr_response.status_code == HTTP_UNPROCESSABLE_ENTITY:
+            logger.error("GitHub API validation error (422): %s", pr_data.get("message"))
+            existing = await _find_existing_pr(
+                http_client=http_client,
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                github_token=github_token,
+                head_branch=head_branch,
+            )
+            if existing:
+                logger.info("Using existing PR for head branch: %s", existing[0])
+                return existing[0], existing[1], True
+        else:
+            logger.error(
+                "GitHub API error (%s): %s",
+                pr_response.status_code,
+                pr_data.get("message"),
             )
 
-            pr_data = pr_response.json()
+        if "errors" in pr_data:
+            logger.error("GitHub API errors detail: %s", pr_data.get("errors"))
 
-            if pr_response.status_code == HTTP_CREATED:
-                pr_url = pr_data.get("html_url")
-                pr_number = pr_data.get("number")
-                logger.info("PR created successfully: %s", pr_url)
-                return pr_url, pr_number, False
+        return None
 
-            if pr_response.status_code == HTTP_UNPROCESSABLE_ENTITY:
-                logger.error("GitHub API validation error (422): %s", pr_data.get("message"))
-                existing = await _find_existing_pr(
-                    http_client=http_client,
-                    repo_owner=repo_owner,
-                    repo_name=repo_name,
-                    github_token=github_token,
-                    head_branch=head_branch,
-                )
-                if existing:
-                    logger.info("Using existing PR for head branch: %s", existing[0])
-                    return existing[0], existing[1], True
-            else:
-                logger.error(
-                    "GitHub API error (%s): %s",
-                    pr_response.status_code,
-                    pr_data.get("message"),
-                )
-
-            if "errors" in pr_data:
-                logger.error("GitHub API errors detail: %s", pr_data.get("errors"))
-
-            return None, None, False
-
-        except httpx.HTTPError:
-            logger.exception("Failed to create PR via GitHub API")
-            return None, None, False
+    except httpx.HTTPError:
+        logger.exception("Failed to create PR via GitHub API")
+        return None
 
 
 async def _find_existing_pr(
