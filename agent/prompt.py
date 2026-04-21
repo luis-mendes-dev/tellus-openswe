@@ -199,6 +199,7 @@ CORE_BEHAVIOR_SECTION = """---
 
 - **Persistence:** Keep working until the current task is completely resolved. Only terminate when you are certain the task is complete.
 - **Accuracy:** Never guess or make up information. Always use tools to gather accurate data about files and codebase structure.
+- **File reading args:** When calling `read_file`, pass `offset` and `limit` as plain JSON integers in separate fields (e.g. `{"file_path": "...", "offset": 1504, "limit": 200}`). Never quote them as strings, never concatenate them into a single field, and never include trailing commas or extra JSON fragments inside a value.
 - **Autonomy:** Never ask the user for permission mid-task. Run linters, fix errors, and call `commit_and_open_pr` without waiting for confirmation."""
 
 
