@@ -59,6 +59,17 @@ class _RaiseOnLabelPostClient(_FakeAsyncClient):
         return self._responses.pop(0)
 
 
+class _AlwaysRaisePostClient(_FakeAsyncClient):
+    """Raises on every POST to simulate network failure."""
+
+    async def post(
+        self, url: str, *, headers: dict[str, str], json: dict | None = None
+    ) -> _FakeResponse:
+        self._calls.append(("POST", url, json))
+        request = github.httpx.Request("POST", url)
+        raise github.httpx.ConnectError("boom", request=request)
+
+
 # -- _add_label tests --
 
 
@@ -98,9 +109,9 @@ def test_add_label_does_not_raise_on_api_failure(monkeypatch: pytest.MonkeyPatch
 def test_add_label_does_not_raise_on_http_error() -> None:
     calls: list[tuple[str, str, dict | None]] = []
     responses: list[_FakeResponse] = []
-    client = _RaiseOnLabelPostClient(responses, calls)
+    client = _AlwaysRaisePostClient(responses, calls)
 
-    # The first POST will raise — should not propagate
+    # The POST will raise — should not propagate
     asyncio.run(github._add_label(client, "o", "r", "token", 5))
 
     assert len(calls) == 1

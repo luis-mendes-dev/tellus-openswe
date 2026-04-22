@@ -193,7 +193,11 @@ async def create_github_pr(
                     pr_url = pr_data.get("html_url")
                     pr_number = pr_data.get("number")
                     await _add_label(
-                        http_client, repo_owner, repo_name, label_tok, pr_number
+                        http_client,
+                        repo_owner,
+                        repo_name,
+                        label_tok,
+                        pr_number,
                     )
                     logger.info("PR created successfully: %s", pr_url)
                     return pr_url, pr_number, False
@@ -209,7 +213,11 @@ async def create_github_pr(
                     )
                     if existing:
                         await _add_label(
-                            http_client, repo_owner, repo_name, label_tok, existing[1]
+                            http_client,
+                            repo_owner,
+                            repo_name,
+                            label_tok,
+                            existing[1],
                         )
                         logger.info("Using existing PR for head branch: %s", existing[0])
                         return existing[0], existing[1], True
