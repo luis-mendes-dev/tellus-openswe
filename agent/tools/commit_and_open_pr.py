@@ -210,35 +210,18 @@ def commit_and_open_pr(
             get_github_default_branch(repo_owner, repo_name, installation_token)
         )
 
-        # Prefer the user's OAuth token so the PR is authored by the user.
-        pr_token = github_token or installation_token
         pr_url, _pr_number, pr_existing = asyncio.run(
             create_github_pr(
                 repo_owner=repo_owner,
                 repo_name=repo_name,
-                github_token=pr_token,
+                github_token=github_token or installation_token,
                 title=title,
                 head_branch=target_branch,
                 base_branch=base_branch,
                 body=pr_body,
-                label_token=installation_token,
+                installation_token=installation_token,
             )
         )
-
-        # Fallback: if user token failed, retry with installation token
-        if not pr_url and github_token and pr_token != installation_token:
-            logger.info("User token PR creation failed, retrying with installation token")
-            pr_url, _pr_number, pr_existing = asyncio.run(
-                create_github_pr(
-                    repo_owner=repo_owner,
-                    repo_name=repo_name,
-                    github_token=installation_token,
-                    title=title,
-                    head_branch=target_branch,
-                    base_branch=base_branch,
-                    body=pr_body,
-                )
-            )
 
         if not pr_url:
             return {
