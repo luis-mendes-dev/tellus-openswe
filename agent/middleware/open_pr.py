@@ -165,15 +165,31 @@ async def open_pr_if_needed(
         base_branch = await get_github_default_branch(repo_owner, repo_name, installation_token)
         logger.info("Using base branch: %s", base_branch)
 
-        await create_github_pr(
+        # Prefer the user's OAuth token so the PR is authored by the user.
+        pr_token = github_token or installation_token
+        pr_result = await create_github_pr(
             repo_owner=repo_owner,
             repo_name=repo_name,
-            github_token=installation_token,
+            github_token=pr_token,
             title=pr_title,
             head_branch=target_branch,
             base_branch=base_branch,
             body=pr_body,
+            label_token=installation_token,
         )
+
+        # Fallback: if user token failed, retry with installation token
+        if not pr_result[0] and github_token and pr_token != installation_token:
+            logger.info("User token PR creation failed, retrying with installation token")
+            await create_github_pr(
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                github_token=installation_token,
+                title=pr_title,
+                head_branch=target_branch,
+                base_branch=base_branch,
+                body=pr_body,
+            )
 
         logger.info("After-agent middleware completed successfully")
 
