@@ -1,3 +1,12 @@
+## Running as Tellus fork
+
+This repository is a Tellus fork of Open-SWE that keeps upstream diffs minimal.
+
+1. Copy env template: `cp .env.example .env`
+2. Set Tellus model config in `.env`:
+   `LLM_MODEL_ID=minimax:MiniMax-M1` and `MINIMAX_API_KEY=...`
+3. Start local dev server: `uv run langgraph dev --allow-blocking`
+
 <div align="center">
   <a href="https://github.com/langchain-ai/open-swe">
     <picture>

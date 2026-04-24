@@ -33,6 +33,7 @@ from .middleware import (
     open_pr_if_needed,
 )
 from .prompt import construct_system_prompt
+from .tellus.models import make_model
 from .tools import (
     commit_and_open_pr,
     create_pr_review,
@@ -59,7 +60,6 @@ from .tools import (
 )
 from .utils.auth import resolve_github_token
 from .utils.github_app import get_github_app_installation_token
-from .utils.model import make_model
 from .utils.sandbox import create_sandbox
 from .utils.sandbox_paths import aresolve_sandbox_work_dir
 
