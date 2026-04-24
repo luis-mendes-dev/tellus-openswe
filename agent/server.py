@@ -32,8 +32,8 @@ from .middleware import (
     ensure_no_empty_msg,
     open_pr_if_needed,
 )
-from .prompt import construct_system_prompt
 from .tellus.models import make_model
+from .tellus.prompt import construct_system_prompt
 from .tools import (
     commit_and_open_pr,
     create_pr_review,
