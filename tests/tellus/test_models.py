@@ -99,3 +99,22 @@ def test_defaults_to_llm_model_id_env(monkeypatch):
     tellus_models.make_model()  # no model_id arg
 
     assert captured["model"] == "openai:MiniMax-M1"
+
+
+def test_planner_role_alias_uses_default_model_resolution(monkeypatch):
+    monkeypatch.setenv("MINIMAX_API_KEY", "k")
+
+    captured: dict = {}
+
+    def fake_init_chat_model(model, **kwargs):
+        captured["model"] = model
+        captured["kwargs"] = kwargs
+        return mock.sentinel.chat_model
+
+    monkeypatch.setattr(tellus_models, "init_chat_model", fake_init_chat_model)
+
+    result = tellus_models.make_model("planner", max_tokens=321)
+
+    assert result is mock.sentinel.chat_model
+    assert captured["model"] == "openai:MiniMax-M1"
+    assert captured["kwargs"]["max_tokens"] == 321
