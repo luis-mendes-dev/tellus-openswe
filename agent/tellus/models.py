@@ -20,11 +20,29 @@ from agent.utils.model import make_model as _upstream_make_model
 
 MINIMAX_DEFAULT_BASE_URL = "https://api.minimax.io/v1"
 DEFAULT_LLM_MODEL_ID = "minimax:MiniMax-M1"
+ROLE_MODEL_ENV_OVERRIDES: dict[str, str] = {
+    "planner": "PLANNER_LLM_MODEL_ID",
+}
+
+
+def _resolve_model_id(model_id: str | None) -> str:
+    """Resolve a model id or role alias into a concrete provider-prefixed id."""
+    if model_id is None:
+        return os.environ.get("LLM_MODEL_ID", DEFAULT_LLM_MODEL_ID)
+
+    if model_id in ROLE_MODEL_ENV_OVERRIDES:
+        role_env_key = ROLE_MODEL_ENV_OVERRIDES[model_id]
+        return os.environ.get(
+            role_env_key,
+            os.environ.get("LLM_MODEL_ID", DEFAULT_LLM_MODEL_ID),
+        )
+
+    return model_id
 
 
 def make_model(model_id: str | None = None, **kwargs):
     """Create a chat model. Supports a `minimax:` prefix on top of upstream."""
-    effective_id = model_id or os.environ.get("LLM_MODEL_ID", DEFAULT_LLM_MODEL_ID)
+    effective_id = _resolve_model_id(model_id)
 
     if effective_id.startswith("minimax:"):
         model_name = effective_id.split(":", 1)[1]

@@ -21,10 +21,12 @@ justification before it lands.
 ## Upstream diff log
 
 The only file outside `agent/tellus/` that Tellus modifies is `agent/server.py`.
-As of Phase 1 the diff is two lines, both imports:
+As of Phase 2 the diff is four lines:
 
 - `from .tellus.models import make_model` (Phase 0)
 - `from .tellus.prompt import construct_system_prompt` (Phase 1)
+- `from .tellus.subagents import SUBAGENTS` (Phase 2)
+- `subagents=SUBAGENTS,` argument inside `create_deep_agent(...)` (Phase 2)
 
 Each later phase that adds to this list must append an entry with the phase
 number and the exact line. More than ~5 lines of upstream diff is a smell and

@@ -34,6 +34,7 @@ from .middleware import (
 )
 from .tellus.models import make_model
 from .tellus.prompt import construct_system_prompt
+from .tellus.subagents import SUBAGENTS
 from .tools import (
     commit_and_open_pr,
     create_pr_review,
@@ -309,6 +310,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
             list_pr_review_comments,
         ],
         backend=sandbox_backend,
+        subagents=SUBAGENTS,
         middleware=[
             ToolErrorMiddleware(),
             check_message_queue_before_model,
